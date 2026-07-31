@@ -1,0 +1,23 @@
+{
+  "name": "gladys-ocpp-integration-gateway",
+  "version": "0.1.0",
+  "description": "OCPP 1.6 relay (charge point <-> origin cloud), companion sub-container of the Gladys OCPP integration.",
+  "private": true,
+  "main": "src/gateway.ts",
+  "scripts": {
+    "start": "node src/gateway.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "ocpp-rpc": "^2.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "manifest_version": 1,
+  "type": "device",
+  "name": "OCPP EV Charger Gateway",
+  "description": {
+    "en": "Read-only supervision of an OCPP 1.6 EV charger, relayed to your own charger cloud.",
+    "fr": "Supervision en lecture seule d'une borne OCPP 1.6, relayee vers le cloud d'origine."
+  },
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.1.0",
+  "gladys_version": ">=4.84.0",
+  "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
+  "transports": ["local"],
+  "config_schema": [
+    {
+      "key": "intro",
+      "type": "section",
+      "label": { "en": "How it works", "fr": "Fonctionnement" },
+      "description": {
+        "en": "This integration runs its own OCPP relay in a companion container. Your charge point connects to the port Gladys assigns below instead of the vendor's cloud, and the relay forwards everything to that cloud so nothing breaks. Exposing this port makes the relay reachable on your LAN - read the documentation before installing.",
+        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur. Votre borne se connecte au port assigne par Gladys ci-dessous a la place du cloud du fabricant, et le relais transmet tout vers ce cloud pour ne rien casser. Cela rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
+      }
+    },
+    {
+      "key": "origin_cloud_url",
+      "type": "secret",
+      "label": { "en": "Origin cloud URL", "fr": "URL du cloud d'origine" },
+      "description": {
+        "en": "OCPP server URL shown in your charger vendor's app (read it BEFORE reconfiguring the charger - it is the only way back to the vendor cloud). Paste it exactly as shown, including any trailing query string (e.g. ending in \"?sn=\").",
+        "fr": "URL du serveur OCPP affichee dans l'app du fabricant (a relever AVANT de reconfigurer la borne : c'est le seul moyen de revenir au cloud d'origine). Collez-la telle quelle, y compris une eventuelle chaine de requete finale (ex. se terminant par \"?sn=\")."
+      },
+      "required": true
+    },
+    {
+      "key": "poll_frequency",
+      "type": "number",
+      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraichissement (s)" },
+      "description": {
+        "en": "How often the relay's state is polled, in seconds.",
+        "fr": "Frequence d'interrogation de l'etat du relais, en secondes."
+      },
+      "required": false,
+      "default": 30,
+      "min": 10,
+      "max": 3600
+    }
+  ],
+  "containers": [
+    {
+      "name": "gateway",
+      "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration-gateway:0.1.0",
+      "start": "manual",
+      "ports": [
+        {
+          "container_port": 9321,
+          "label": {
+            "en": "OCPP (charge point connects here)",
+            "fr": "OCPP (la borne se connecte ici)"
+          }
+        }
+      ],
+      "memory_mb": 256,
+      "cpu": 0.5
+    }
+  ]
+}

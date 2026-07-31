@@ -1,0 +1,78 @@
+# -----------------------------------------------------------------------------
+# Continuous integration: runs on every push and every pull request.
+#
+# Two parallel jobs, one per Docker image built by this repo:
+#   - `quality`         -> the main integration container (root of the repo);
+#   - `gateway-quality` -> the "gateway" sub-container (gateway/, its own
+#     package.json/tsconfig.json - TypeScript, not ESLint-checked, see below).
+#
+# Main container gates, the same ones every developer inspired by this
+# template should keep:
+#   1. Prettier  -> consistent formatting (covers gateway/**/*.ts too, run
+#      once at the repo root - no need to repeat it in the gateway job);
+#   2. ESLint    -> catch real mistakes (undefined vars, dead code, ...);
+#   3. Tests     -> `node --test`, the built-in runner (no extra dependency).
+#
+# Runs on Node 24, the version both Docker images ship with (see the
+# Dockerfiles), so the checks exercise the exact runtime the integration
+# runs on.
+# -----------------------------------------------------------------------------
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    name: Lint & test (main container)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting (Prettier)
+        run: npm run format:check
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+  gateway-quality:
+    runs-on: ubuntu-latest
+    name: Typecheck & test (gateway sub-container)
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
