@@ -109,6 +109,18 @@ See that file's header comment for the exact mechanism and a documented
 caveat (a one-character trailing-slash artifact on the wire, worth
 validating against real hardware).
 
+## Tested hardware
+
+| Charge point         | Protocol  | Identity addressing   | Connectors | Notes                                                                                                         |
+| -------------------- | --------- | --------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| Autel MaxiCharger AC | OCPP 1.6J | Query-string (`?sn=`) | 1          | End-to-end: relay, live `add_charger` configuration, device discovery all confirmed against the real charger. |
+
+This list only grows as hardware actually gets tested against this repo —
+absence from it doesn't mean incompatibility, just that nobody has confirmed
+it yet. If you test another charge point successfully (or run into a
+firmware quirk `gateway/src/originConnection.ts` doesn't handle), please
+open an issue or a PR adding a row here.
+
 ## Run the main container locally
 
 ```bash
