@@ -10,11 +10,14 @@
 // process, no risk to the charge point<->origin cloud relay running in the
 // sub-container.
 //
-// One Gladys device PER PHYSICAL CONNECTOR, discovered dynamically: OCPP
-// connector id 0 is the aggregate charge point (never a device), ids 1..N
-// are real physical connectors, reported by the charge point itself via
-// StatusNotification. The set of devices this blueprint offers therefore
-// grows as new connectors are observed - see buildDevices() below.
+// One Gladys device PER (CONFIGURED CHARGE POINT x PHYSICAL CONNECTOR),
+// discovered dynamically: `config.chargers` (see ../chargers.js) lists every
+// charge point identity the user has configured via the `add_charger`
+// manifest action; for each one, OCPP connector id 0 is the aggregate charge
+// point (never a device), ids 1..N are real physical connectors, reported by
+// the charge point itself via StatusNotification. The set of devices this
+// blueprint offers therefore grows as new charge points are configured and
+// new connectors are observed - see buildDevices() below.
 // -----------------------------------------------------------------------------
 
 import {
@@ -23,8 +26,7 @@ import {
   DEVICE_FEATURE_TYPES,
   DEVICE_FEATURE_UNITS,
 } from '@gladysassistant/integration-sdk';
-import { isConfigured } from '../config.js';
-import { fetchGatewayState, pickSupervisedCharger } from '../gatewayClient.js';
+import { fetchGatewayState } from '../gatewayClient.js';
 
 const DEVICE_TYPE = 'ev-charger-connector';
 
@@ -101,7 +103,7 @@ function connectorPlatformId(identity, connectorId) {
 function buildConnectorDevice(gladys, config, identity, connectorId) {
   const ids = gladys.externalIds(DEVICE_TYPE, connectorPlatformId(identity, connectorId));
   return {
-    name: `EV charger - connector ${connectorId}`,
+    name: `EV charger ${identity} - connector ${connectorId}`,
     external_id: ids.device,
     poll_frequency: config.poll_frequency,
     features: [
@@ -194,67 +196,71 @@ export const charger = {
   },
 
   /**
-   * Builds one device per physical connector currently known to the gateway
-   * sub-container. Returns an empty array (not an error) whenever there is
-   * nothing to offer yet: unconfigured, gateway unreachable, or no charge
-   * point has connected to it so far - all expected, transient states.
+   * Builds one device per (configured charge point x physical connector
+   * currently known to the gateway sub-container). Returns an empty array
+   * (not an error) whenever there is nothing to offer yet: no charge point
+   * configured, gateway unreachable, or a configured charge point hasn't
+   * connected/reported any connector so far - all expected, transient
+   * states.
    *
    * `fetchState` defaults to the real gateway HTTP call; overridable so
    * tests can exercise the connector-discovery logic without a live gateway
    * sub-container (see test/devices/charger.test.js).
    */
   async buildDevices(gladys, config, fetchState = fetchGatewayState) {
-    if (!isConfigured(config)) return [];
+    const identities = Object.keys(config.chargers ?? {});
+    if (identities.length === 0) return [];
 
     let allChargers;
     try {
-      allChargers = await fetchState();
+      ({ chargers: allChargers } = await fetchState());
     } catch (err) {
       logger.warn('Gateway unreachable, cannot enumerate connectors yet', err);
       return [];
     }
 
-    const chargeState = pickSupervisedCharger(allChargers);
-    if (!chargeState) return [];
-
-    return Object.keys(chargeState.connectors ?? {})
-      .map(Number)
-      .filter((connectorId) => connectorId !== AGGREGATE_CONNECTOR_ID)
-      .map((connectorId) =>
-        buildConnectorDevice(gladys, config, chargeState.identity, connectorId),
-      );
+    const devices = [];
+    for (const identity of identities) {
+      const chargeState = allChargers?.[identity];
+      if (!chargeState) continue; // configured, but never seen connecting yet
+      for (const connectorId of Object.keys(chargeState.connectors ?? {}).map(Number)) {
+        if (connectorId === AGGREGATE_CONNECTOR_ID) continue;
+        devices.push(buildConnectorDevice(gladys, config, identity, connectorId));
+      }
+    }
+    return devices;
   },
 
   async onPoll(gladys, config, device, fetchState = fetchGatewayState) {
     let allChargers;
     try {
-      allChargers = await fetchState();
+      ({ chargers: allChargers } = await fetchState());
     } catch (err) {
       // The gateway sub-container can be briefly unreachable (still starting
-      // up after startContainer(), mid-restart...) - not an error worth
-      // failing the poll command over, see buildDevices() above for the same
-      // reasoning. Skip this cycle, the next poll will pick up fresh data.
+      // up, mid-restart...) - not an error worth failing the poll command
+      // over, see buildDevices() above for the same reasoning. Skip this
+      // cycle, the next poll will pick up fresh data.
       logger.warn(`Gateway unreachable, skipping poll for ${device.external_id}`, err);
       return;
     }
-    const chargeState = pickSupervisedCharger(allChargers);
-    if (!chargeState) return;
 
-    const connectorId = Object.keys(chargeState.connectors ?? {}).find(
-      (id) =>
-        gladys.externalIds(DEVICE_TYPE, connectorPlatformId(chargeState.identity, id)).device ===
-        device.external_id,
-    );
-    if (connectorId === undefined) return; // this device's connector isn't currently reported
-
-    const ids = gladys.externalIds(
-      DEVICE_TYPE,
-      connectorPlatformId(chargeState.identity, connectorId),
-    );
-    const states = mapConnectorToStates(ids, chargeState.connectors[connectorId]);
-    if (states.length > 0) {
-      logger.info(`Poll OK: ${states.length} state(s) published for connector ${connectorId}`);
-      await gladys.publishStates(states);
+    for (const identity of Object.keys(config.chargers ?? {})) {
+      const chargeState = allChargers?.[identity];
+      if (!chargeState) continue;
+      for (const connectorId of Object.keys(chargeState.connectors ?? {})) {
+        const ids = gladys.externalIds(DEVICE_TYPE, connectorPlatformId(identity, connectorId));
+        if (ids.device !== device.external_id) continue;
+        const states = mapConnectorToStates(ids, chargeState.connectors[connectorId]);
+        if (states.length > 0) {
+          logger.info(
+            `Poll OK: ${states.length} state(s) published for ${identity} connector ${connectorId}`,
+          );
+          await gladys.publishStates(states);
+        }
+        return;
+      }
     }
+    // No configured charge point currently reports this device's connector -
+    // nothing to publish this cycle.
   },
 };

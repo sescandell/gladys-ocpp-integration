@@ -3,9 +3,18 @@
 //
 // Role of this file: wire the SDK to the device catalog (src/devices/) AND
 // drive the lifecycle of the "gateway" sub-container (see gateway/), which
-// carries the real OCPP relay. No OCPP logic here: everything lives in the
-// sub-container, only ever queried read-only via GET /api/state
+// carries the real OCPP relay for every configured charge point. No OCPP
+// logic here: everything lives in the sub-container, only ever queried
+// read-only via GET /api/state, and driven via POST /api/chargers
 // (src/gatewayClient.js).
+//
+// Any number of charge points can be configured, one at a time, through the
+// `add_charger` manifest action (see gladys.onAction below) - not through the
+// generated config form (Gladys's config_schema is a flat, fixed list of
+// fields, it cannot represent "add as many charge points as you want"). The
+// set of configured charge points lives in free internal config storage (see
+// src/chargers.js), pushed LIVE to the gateway sub-container - no restart
+// needed to pick up a newly configured (or removed) charge point.
 //
 // V1: READ-ONLY - no onSetValue registered. A handler absent for a command
 // the SDK receives is automatically acked "not implemented" - no defensive
@@ -19,26 +28,16 @@
 // -----------------------------------------------------------------------------
 
 import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
-import { normalizeConfig, isConfigured } from './src/config.js';
+import { normalizeConfig } from './src/config.js';
+import { serializeChargersStore, upsertCharger, removeCharger } from './src/chargers.js';
 import { buildDiscoveredDevices, findBlueprintByDevice } from './src/devices/index.js';
-import { ensureGatewayRunning } from './src/gatewayClient.js';
+import { ensureGatewayRunning, syncChargerMap, fetchGatewayState } from './src/gatewayClient.js';
 
 const gladys = new GladysIntegration();
 
-// Current configuration (hot-reloaded via onConfigUpdated).
+// Current configuration (hot-reloaded via onConfigUpdated and after every
+// add_charger action).
 let config = normalizeConfig();
-
-// Last origin_cloud_url actually applied to the gateway sub-container - lets
-// us distinguish "config re-saved without changing anything" (leave the
-// sub-container alone) from "the URL actually changed" (restart needed).
-// This matters because gladys.startContainer() restarts the sub-container on
-// EVERY call, even when the env is unchanged (verified in the Gladys core
-// source, externalIntegration.startSubContainer.js: container.restart() runs
-// unconditionally) - calling it without this guard on every 'connected'
-// event (which fires on every WebSocket reconnection to Gladys, unrelated to
-// config changes) would drop the physical charge point's live OCPP session
-// each time.
-let lastAppliedOriginCloudUrl = null;
 
 // --- Discovery: Gladys asks for the list of devices --------------------------
 gladys.onScanRequest(async () => {
@@ -56,14 +55,53 @@ gladys.onPoll(async (device) => {
   await blueprint.onPoll(gladys, config, device);
 });
 
-// --- Configuration updated by the user ---------------------------------------
+// --- Configuration updated by the user (poll_frequency only - the set of --
+// --- charge points is managed by the add_charger action, see below) --------
 gladys.onConfigUpdated(async (newConfig) => {
   logger.info('onConfigUpdated -> new configuration received');
   config = normalizeConfig(newConfig);
   await reconcileGateway();
-  // Re-publish devices: poll_frequency and which connectors are currently
-  // known may have changed (e.g. the gateway just (re)started).
   await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+});
+
+// --- Manifest action: configure (or remove) one charge point -----------------
+// Fields: `identity` (required), `origin_cloud_url` (empty = remove). Runs
+// independently of the config-form save flow, so it re-fetches the config
+// fresh to merge against the latest saved charger set rather than risking a
+// stale in-memory copy.
+gladys.onAction('add_charger', async ({ fields }) => {
+  const identity = String(fields.identity ?? '').trim();
+  if (!identity) {
+    throw new Error('Charge point identity is required.');
+  }
+  const originCloudUrl = String(fields.origin_cloud_url ?? '').trim();
+
+  const freshConfig = normalizeConfig(await gladys.getConfig());
+  let chargers = freshConfig.chargers;
+
+  if (originCloudUrl === '') {
+    chargers = removeCharger(chargers, identity);
+  } else {
+    try {
+      const parsedUrl = new URL(originCloudUrl);
+      if (parsedUrl.protocol !== 'ws:' && parsedUrl.protocol !== 'wss:') {
+        throw new Error('not a ws(s):// URL');
+      }
+    } catch {
+      throw new Error('The origin cloud URL must be a valid ws:// or wss:// URL.');
+    }
+    chargers = upsertCharger(chargers, identity, originCloudUrl);
+  }
+
+  await gladys.setConfig(serializeChargersStore(chargers));
+  config = { ...freshConfig, chargers };
+
+  await reconcileGateway();
+  await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+
+  return originCloudUrl === ''
+    ? { en: `Charge point "${identity}" removed.`, fr: `Borne "${identity}" retirée.` }
+    : { en: `Charge point "${identity}" configured.`, fr: `Borne "${identity}" configurée.` };
 });
 
 // --- Connection lifecycle ----------------------------------------------------
@@ -72,9 +110,8 @@ gladys.on('connected', async () => {
     // 1) Fetch the config filled in by the user.
     config = normalizeConfig(await gladys.getConfig());
 
-    // 2) Ensure the gateway sub-container is running BEFORE trying to read
-    // its state, so a freshly-started gateway has at least been asked to
-    // start (harmless when it's already running, see ensureGatewayRunning).
+    // 2) Ensure the gateway sub-container is running, push the current set of
+    // configured charge points, and reflect it all in the connection status.
     await reconcileGateway();
 
     // 3) (Re)publish whatever connector devices are currently known.
@@ -91,39 +128,47 @@ gladys.on('connected', async () => {
 });
 
 /**
- * Ensures the gateway sub-container is in the right state given the current
- * config, and reflects the outcome in the connection status (visible on the
- * Configuration screen) - in particular the host port the physical charge
- * point must be pointed at.
+ * Ensures the gateway sub-container is running, pushes the current set of
+ * configured charge points to it (a live, full replace - never a restart,
+ * see gatewayClient.js), and reflects it all in the connection status
+ * (visible on the Configuration screen): the assigned host port, how many
+ * charge points are configured, and which identities have been seen
+ * connecting without being configured yet ("pending" - surfaced so the user
+ * can copy their identity into the `add_charger` action without having to
+ * hunt for a serial number on a sticker).
  */
 async function reconcileGateway() {
-  if (!isConfigured(config)) {
-    lastAppliedOriginCloudUrl = null;
-    await gladys.setConnectionStatus(false, {
-      en: 'Set the origin cloud URL to start the gateway.',
-      fr: "Renseignez l'URL du cloud d'origine pour démarrer le relais.",
-    });
-    return;
-  }
-
   try {
-    const cloudUrlChanged =
-      lastAppliedOriginCloudUrl !== null && lastAppliedOriginCloudUrl !== config.origin_cloud_url;
-    const { hostPort } = await ensureGatewayRunning(
-      gladys,
-      config,
-      /* forceRestart */ cloudUrlChanged,
-    );
-    lastAppliedOriginCloudUrl = config.origin_cloud_url;
+    const { hostPort } = await ensureGatewayRunning(gladys);
+    await syncChargerMap(config.chargers);
 
-    await gladys.setConnectionStatus(true, {
-      en: hostPort
-        ? `Gateway running. Point your charge point's OCPP server URL to port ${hostPort} of this Gladys host.`
-        : 'Gateway running, host port not yet assigned.',
-      fr: hostPort
-        ? `Relais actif. Pointez l'URL du serveur OCPP de la borne vers le port ${hostPort} de cet hôte.`
+    const configuredCount = Object.keys(config.chargers).length;
+    let pendingIdentities = [];
+    try {
+      const state = await fetchGatewayState();
+      pendingIdentities = state.pending.map((p) => p.identity);
+    } catch (err) {
+      logger.warn('Unable to fetch the gateway state for the status message', err);
+    }
+
+    const en = [
+      hostPort
+        ? `Relay running on port ${hostPort} of this Gladys host.`
+        : 'Relay running, host port not yet assigned.',
+      `${configuredCount} charge point(s) configured.`,
+    ];
+    const fr = [
+      hostPort
+        ? `Relais actif sur le port ${hostPort} de cet hôte.`
         : 'Relais actif, port hôte pas encore assigné.',
-    });
+      `${configuredCount} borne(s) configurée(s).`,
+    ];
+    if (pendingIdentities.length > 0) {
+      en.push(`Detected, awaiting configuration: ${pendingIdentities.join(', ')}.`);
+      fr.push(`Détectée(s), en attente de configuration : ${pendingIdentities.join(', ')}.`);
+    }
+
+    await gladys.setConnectionStatus(true, { en: en.join(' '), fr: fr.join(' ') });
   } catch (err) {
     logger.error('Unable to start/verify the gateway sub-container', err);
     await gladys

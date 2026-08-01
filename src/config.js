@@ -5,40 +5,34 @@
 // `gladys-assistant-integration.json`. The SDK fetches it (`gladys.getConfig()`)
 // and notifies every change through `gladys.onConfigUpdated()`.
 //
+// The set of configured charge points (identity -> origin cloud URL) is NOT
+// part of the schema (see src/chargers.js) - it is folded into the
+// normalized config here as `chargers` for convenience, since virtually
+// every downstream module needs it alongside `poll_frequency`.
+//
 // No "gateway_url" field here: the "gateway" sub-container is always reachable
 // on a fixed internal URL (see src/gatewayClient.js), resolved through the
 // private Docker network Gladys creates for this integration (DNS alias = the
 // sub-container name declared in the manifest).
 // -----------------------------------------------------------------------------
 
+import { parseChargersStore } from './chargers.js';
+
 export const DEFAULT_CONFIG = {
-  // OCPP server URL shown in the charger vendor's app - forwarded to the
-  // gateway sub-container as a runtime env var (ORIGIN_CLOUD_URL), never
-  // logged or displayed back.
-  origin_cloud_url: '',
-  // How often the gateway sub-container's state is polled, in seconds.
+  // How often each charge point's state is polled, in seconds.
   poll_frequency: 30,
 };
 
 /**
- * Merge the user config with the defaults.
+ * Merge the user config with the defaults, and fold in the parsed charger
+ * store as `chargers`.
  * @param {Record<string, unknown>} raw config returned by the SDK
  */
 export function normalizeConfig(raw = {}) {
   return {
     ...DEFAULT_CONFIG,
     ...raw,
-    origin_cloud_url: String(raw.origin_cloud_url ?? DEFAULT_CONFIG.origin_cloud_url).trim(),
     poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
+    chargers: parseChargersStore(raw),
   };
-}
-
-/**
- * Whether the user has filled in enough config to start the gateway
- * sub-container. Kept as its own predicate so the "don't start with an empty
- * URL" guard is unit-testable independently of the container-lifecycle code.
- * @param {ReturnType<typeof normalizeConfig>} config
- */
-export function isConfigured(config) {
-  return config.origin_cloud_url !== '';
 }

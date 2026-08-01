@@ -1,8 +1,6 @@
 // -----------------------------------------------------------------------------
 // HTTP client towards the "gateway" sub-container (../gateway/, packaged via
 // its own Dockerfile - a standalone project, no dependency on this code).
-// Read-only: this process never talks to the physical charge point or the
-// origin cloud directly, only GET /api/state.
 //
 // Fixed internal URL: the "gateway" sub-container is reachable by its
 // declared manifest name (DNS alias on the private Docker network Gladys
@@ -16,11 +14,13 @@ export const GATEWAY_SUB_CONTAINER_NAME = 'gateway';
 export const GATEWAY_OCPP_CONTAINER_PORT = 9321;
 
 /**
- * Fetch the full state of every charge point currently known to the gateway
- * sub-container (keyed by OCPP identity).
+ * Fetch the full gateway state: every configured charge point currently
+ * known (keyed by OCPP identity), plus the identities seen connecting
+ * without being configured yet ("pending" - see the gateway's
+ * ChargerRegistry).
  * @param {string} [baseUrl] override for tests; defaults to the fixed
  *   internal URL used in production (see module doc comment above).
- * @returns {Promise<Record<string, object>>}
+ * @returns {Promise<{chargers: Record<string, object>, pending: Array<{identity: string, firstSeenAt: string, lastSeenAt: string}>}>}
  */
 export async function fetchGatewayState(baseUrl = GATEWAY_INTERNAL_URL) {
   const res = await fetch(`${baseUrl}/api/state`, { signal: AbortSignal.timeout(10_000) });
@@ -31,50 +31,60 @@ export async function fetchGatewayState(baseUrl = GATEWAY_INTERNAL_URL) {
 }
 
 /**
- * V1 supervises a single charge point: pick the most recently seen entry if
- * the gateway's in-memory state ever holds more than one (e.g. leftover state
- * after the physical charger was swapped for another).
- * @param {Record<string, object>} allChargers
- * @returns {object|null}
+ * Pushes the full, current set of configured charge points (identity ->
+ * origin cloud URL) to the gateway sub-container - a live, full replace, no
+ * container restart involved. Safe to call anytime the gateway is running:
+ * unlike `startContainer`, this never interrupts an already-relaying charge
+ * point's session (see `ensureGatewayRunning`'s doc comment for why that
+ * distinction matters).
+ * @param {Record<string, string>} chargers identity -> origin cloud URL
+ * @param {string} [baseUrl] override for tests
+ * @returns {Promise<{success: boolean, configuredCount: number}>}
  */
-export function pickSupervisedCharger(allChargers) {
-  const entries = Object.values(allChargers ?? {});
-  if (entries.length === 0) return null;
-  return entries.reduce((latest, charger) => {
-    if (!latest) return charger;
-    return (charger.lastSeenAt ?? '') > (latest.lastSeenAt ?? '') ? charger : latest;
-  }, null);
+export async function syncChargerMap(chargers, baseUrl = GATEWAY_INTERNAL_URL) {
+  const res = await fetch(`${baseUrl}/api/chargers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chargers }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    throw new Error(`gateway /api/chargers -> HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 /**
- * Ensures the gateway sub-container is running with the current config,
- * WITHOUT restarting it unnecessarily - `gladys.startContainer()` restarts
- * the sub-container on EVERY call, even when the runtime env is unchanged
- * (verified in the Gladys core source, externalIntegration.startSubContainer.js:
- * container.restart() runs unconditionally after the create-if-needed step).
- * Calling this without a guard on every 'connected'/'config-updated' event
- * (which fires on every WebSocket reconnection to Gladys, unrelated to
- * configuration changes) would drop the physical charge point's live OCPP
- * session each time. The sub-container is only (re)started here if it is not
- * already running, or if `forceRestart` says the origin cloud URL actually
- * changed since the last applied start.
+ * Ensures the gateway sub-container is running, and reports its assigned
+ * host port.
+ *
+ * The manifest declares the sub-container `start: "auto"`: Gladys's
+ * supervisor creates and starts it BEFORE this main container even boots,
+ * and independently restarts it (with backoff) if it ever crashes - so this
+ * is a defensive fallback for the unlikely case it isn't running yet the
+ * first time this is checked, not the primary way it gets started.
+ *
+ * Deliberately does NOT take the set of configured charge points as a
+ * parameter, and never restarts an already-running container: which charge
+ * points are configured is pushed live via `syncChargerMap()` instead (see
+ * `POST /api/chargers`), so a config change never needs to interrupt every
+ * OTHER charge point's live OCPP session the way a container restart would
+ * (verified in the Gladys core source,
+ * externalIntegration.startSubContainer.js: `container.restart()` runs
+ * unconditionally on every `startContainer` call, even with an unchanged env).
  * @param {import('@gladysassistant/integration-sdk').GladysIntegration} gladys
- * @param {{origin_cloud_url: string}} config
- * @param {boolean} [forceRestart]
  * @returns {Promise<{started: boolean, hostPort: number|null}>}
  */
-export async function ensureGatewayRunning(gladys, config, forceRestart = false) {
+export async function ensureGatewayRunning(gladys) {
   const containers = await gladys.getContainers();
   const existing = containers.find((c) => c.name === GATEWAY_SUB_CONTAINER_NAME);
   const ocppPort = existing?.ports?.find((p) => p.container_port === GATEWAY_OCPP_CONTAINER_PORT);
 
-  if (existing?.status === 'running' && !forceRestart) {
+  if (existing?.status === 'running') {
     return { started: false, hostPort: ocppPort?.host_port ?? null };
   }
 
-  await gladys.startContainer(GATEWAY_SUB_CONTAINER_NAME, {
-    env: { ORIGIN_CLOUD_URL: config.origin_cloud_url },
-  });
+  await gladys.startContainer(GATEWAY_SUB_CONTAINER_NAME);
 
   const updated = await gladys.getContainers();
   const started = updated.find((c) => c.name === GATEWAY_SUB_CONTAINER_NAME);

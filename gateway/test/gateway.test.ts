@@ -3,15 +3,17 @@
  * cloud", the relay under test (`createGatewayServer`), and real RPCClient
  * connections acting as charge points - all over localhost, no mocks. Proves
  * the response asymmetry (only the primary's response reaches the charge
- * point), multi-charge-point isolation, and that the internal state observes
- * the transactionId REALLY assigned by the primary, never invented locally.
+ * point), multi-charge-point isolation (including routing two DIFFERENT
+ * charge points to two DIFFERENT origin clouds), and that the internal state
+ * observes the transactionId REALLY assigned by the primary, never invented
+ * locally.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RPCClient, RPCServer } from 'ocpp-rpc';
 import type { IHandlersOption } from 'ocpp-rpc';
-import { createGatewayServer, store } from '../src/gateway.ts';
+import { createGatewayServer, store, registry } from '../src/gateway.ts';
 import type {
   BootNotificationResponse,
   StartTransactionResponse,
@@ -29,29 +31,26 @@ const PRIMARY_TRANSACTION_ID = 987654;
 
 type ClientOptions = ConstructorParameters<typeof RPCClient>[0];
 
-async function setup() {
-  // Fake primary (origin cloud): answers identifiably, keeps track of
-  // received calls and a reference to each server-side client to push a
-  // targeted CALL later.
+function fakePrimaryServer(port: number) {
   const primaryServer = new RPCServer({ protocols: ['ocpp1.6'] });
   primaryServer.auth((accept: (session?: Record<string, unknown>) => void) => accept());
-  const primaryReceived = new Map<string, { method: string; params: unknown }[]>();
-  const primaryClients = new Map<string, any>();
+  const received = new Map<string, { method: string; params: unknown }[]>();
+  const clients = new Map<string, any>();
 
   primaryServer.on('client', (client: any) => {
     const identity = client.identity as string;
-    primaryReceived.set(identity, []);
-    primaryClients.set(identity, client);
+    received.set(identity, []);
+    clients.set(identity, client);
 
     client.handle((args: IHandlersOption) => {
       const method = args.method as string;
-      primaryReceived.get(identity)!.push({ method, params: args.params });
+      received.get(identity)!.push({ method, params: args.params });
       if (method === 'BootNotification') {
         return {
           status: 'Accepted',
           interval: 300,
           currentTime: new Date().toISOString(),
-          vendorNote: `primary-${identity}`,
+          vendorNote: `primary-${port}-${identity}`,
         };
       }
       if (method === 'StartTransaction') {
@@ -60,17 +59,26 @@ async function setup() {
       if (method === 'StopTransaction') {
         return { idTagInfo: { status: 'Accepted' } };
       }
-      return { status: 'Accepted', answeredBy: `primary-${identity}` };
+      return { status: 'Accepted', answeredBy: `primary-${port}-${identity}` };
     });
   });
+
+  return { primaryServer, received, clients };
+}
+
+async function setup() {
+  const {
+    primaryServer,
+    received: primaryReceived,
+    clients: primaryClients,
+  } = fakePrimaryServer(PRIMARY_PORT);
   await primaryServer.listen(PRIMARY_PORT);
 
-  const gatewayServer = createGatewayServer({
-    buildPrimaryConnection: (identity) => ({
-      endpoint: `ws://localhost:${PRIMARY_PORT}`,
-      identity,
-    }),
-  });
+  registry.replaceMap(
+    Object.fromEntries(IDENTITIES.map((identity) => [identity, `ws://localhost:${PRIMARY_PORT}`])),
+  );
+
+  const gatewayServer = createGatewayServer();
   await gatewayServer.listen(GATEWAY_PORT);
 
   const chargerClients = new Map<string, RPCClient>();
@@ -120,7 +128,7 @@ test('gateway relay: end to end wiring', async (t) => {
         ),
       );
       IDENTITIES.forEach((identity, i) => {
-        assert.equal(responses[i]!.vendorNote, `primary-${identity}`);
+        assert.equal(responses[i]!.vendorNote, `primary-${PRIMARY_PORT}-${identity}`);
       });
     },
   );
@@ -188,7 +196,129 @@ test('gateway relay: end to end wiring', async (t) => {
   );
 });
 
-test('a synchronous error from buildPrimaryConnection() closes the connection cleanly, never crashes the process', async (t) => {
+test('two different charge points route to two different origin clouds', async (t) => {
+  const PORT_1 = 19529;
+  const PRIMARY_1_PORT = 19530;
+  const PRIMARY_2_PORT = 19531;
+
+  const primary1 = fakePrimaryServer(PRIMARY_1_PORT);
+  const primary2 = fakePrimaryServer(PRIMARY_2_PORT);
+  await primary1.primaryServer.listen(PRIMARY_1_PORT);
+  await primary2.primaryServer.listen(PRIMARY_2_PORT);
+  t.after(() => Promise.all([primary1.primaryServer.close({}), primary2.primaryServer.close({})]));
+
+  registry.replaceMap({
+    'CP-VENDOR-1': `ws://localhost:${PRIMARY_1_PORT}`,
+    'CP-VENDOR-2': `ws://localhost:${PRIMARY_2_PORT}`,
+  });
+
+  const gatewayServer = createGatewayServer();
+  await gatewayServer.listen(PORT_1);
+  t.after(() => gatewayServer.close({}));
+
+  const client1 = new RPCClient({
+    endpoint: `ws://localhost:${PORT_1}`,
+    identity: 'CP-VENDOR-1',
+    protocols: ['ocpp1.6'],
+  } as ClientOptions);
+  const client2 = new RPCClient({
+    endpoint: `ws://localhost:${PORT_1}`,
+    identity: 'CP-VENDOR-2',
+    protocols: ['ocpp1.6'],
+  } as ClientOptions);
+  await client1.connect();
+  await client2.connect();
+  t.after(() => Promise.all([client1.close(), client2.close()]));
+
+  const response1 = (await client1.call('BootNotification', {
+    chargePointVendor: 'v1',
+    chargePointModel: 'm1',
+  })) as BootNotificationResponse & {
+    vendorNote?: string;
+  };
+  const response2 = (await client2.call('BootNotification', {
+    chargePointVendor: 'v2',
+    chargePointModel: 'm2',
+  })) as BootNotificationResponse & {
+    vendorNote?: string;
+  };
+
+  assert.equal(response1.vendorNote, `primary-${PRIMARY_1_PORT}-CP-VENDOR-1`);
+  assert.equal(response2.vendorNote, `primary-${PRIMARY_2_PORT}-CP-VENDOR-2`);
+});
+
+test('an unconfigured identity is recorded as pending and closed cleanly, no crash', async (t) => {
+  const PORT = 19545; // distinct from originConnectionWire.test.ts's CLOUD_PORT (files run concurrently)
+
+  registry.replaceMap({}); // nothing configured
+  const gatewayServer = createGatewayServer();
+  await gatewayServer.listen(PORT);
+  t.after(() => gatewayServer.close({}));
+
+  const client = new RPCClient({
+    endpoint: `ws://localhost:${PORT}`,
+    identity: 'CP-UNCONFIGURED',
+    protocols: ['ocpp1.6'],
+    reconnect: false,
+  } as ClientOptions);
+  const closed = new Promise<void>((resolve) => client.once('close', () => resolve()));
+  await client.connect();
+  await closed;
+
+  const pending = registry.pendingList();
+  assert.ok(pending.some((e) => e.identity === 'CP-UNCONFIGURED'));
+});
+
+test('configuring a previously-pending identity (via replaceMap) lets the next connection through', async (t) => {
+  const PORT = 19533;
+  const PRIMARY_PORT_LOCAL = 19534;
+
+  const { primaryServer } = fakePrimaryServer(PRIMARY_PORT_LOCAL);
+  await primaryServer.listen(PRIMARY_PORT_LOCAL);
+  t.after(() => primaryServer.close({}));
+
+  registry.replaceMap({}); // starts unconfigured
+  const gatewayServer = createGatewayServer();
+  await gatewayServer.listen(PORT);
+  t.after(() => gatewayServer.close({}));
+
+  const firstAttempt = new RPCClient({
+    endpoint: `ws://localhost:${PORT}`,
+    identity: 'CP-LATE-CONFIG',
+    protocols: ['ocpp1.6'],
+    reconnect: false,
+  } as ClientOptions);
+  const firstClosed = new Promise<void>((resolve) => firstAttempt.once('close', () => resolve()));
+  await firstAttempt.connect();
+  await firstClosed;
+  assert.ok(registry.pendingList().some((e) => e.identity === 'CP-LATE-CONFIG'));
+
+  // The main container configures it live - no gateway restart needed.
+  registry.replaceMap({ 'CP-LATE-CONFIG': `ws://localhost:${PRIMARY_PORT_LOCAL}` });
+  assert.equal(
+    registry.pendingList().some((e) => e.identity === 'CP-LATE-CONFIG'),
+    false,
+  );
+
+  const secondAttempt = new RPCClient({
+    endpoint: `ws://localhost:${PORT}`,
+    identity: 'CP-LATE-CONFIG',
+    protocols: ['ocpp1.6'],
+    reconnect: false,
+  } as ClientOptions);
+  await secondAttempt.connect();
+  t.after(() => secondAttempt.close());
+
+  const response = (await secondAttempt.call('BootNotification', {
+    chargePointVendor: 'x',
+    chargePointModel: 'y',
+  })) as BootNotificationResponse & {
+    vendorNote?: string;
+  };
+  assert.equal(response.vendorNote, `primary-${PRIMARY_PORT_LOCAL}-CP-LATE-CONFIG`);
+});
+
+test('a configured but malformed origin cloud URL closes the connection cleanly, never crashes the process', async (t) => {
   const REGRESSION_GATEWAY_PORT = 19528;
 
   // Regression test for a real incident: originConnection.ts's guiding error
@@ -197,19 +327,11 @@ test('a synchronous error from buildPrimaryConnection() closes the connection cl
   // Left unguarded, this used to crash the whole gateway process (a RangeError
   // thrown deep inside ocpp-rpc/ws while trying to close the socket with that
   // over-long reason) instead of just rejecting the one problematic
-  // connection - see gateway.ts's try/catch around buildPrimaryConnection().
-  const longMessage =
-    'Origin cloud URL has a query string but no empty parameter to receive the charge point identity (expected something like "...?sn=") - paste the URL exactly as shown by the vendor app.';
-  assert.ok(
-    Buffer.byteLength(longMessage, 'utf8') > 123,
-    'the test fixture must reproduce the over-123-byte condition',
-  );
+  // connection - see gateway.ts's try/catch around buildPrimaryConnectionOptions().
+  const malformedUrl = 'wss://cloud.example.com/ocpp/webSocket?sn=already-filled-in';
 
-  const gatewayServer = createGatewayServer({
-    buildPrimaryConnection: () => {
-      throw new Error(longMessage);
-    },
-  });
+  registry.replaceMap({ 'CP-REGRESSION': malformedUrl, 'CP-AFTER-REGRESSION': malformedUrl });
+  const gatewayServer = createGatewayServer();
   await gatewayServer.listen(REGRESSION_GATEWAY_PORT);
   t.after(() => gatewayServer.close({}));
 

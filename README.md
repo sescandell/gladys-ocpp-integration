@@ -1,9 +1,9 @@
 # Gladys OCPP integration
 
 External integration for [Gladys Assistant](https://gladysassistant.com):
-read-only supervision of an OCPP 1.6 EV charge point, relayed through an
-embedded, companion OCPP relay to the charger's own vendor cloud. Built with
-the JavaScript SDK
+read-only supervision of any number of OCPP 1.6 EV charge points, each
+relayed through an embedded, companion OCPP relay to its own vendor cloud —
+even different vendors at once. Built with the JavaScript SDK
 [`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),
 from the official
 [`integration-template-js`](https://github.com/GladysAssistant/integration-template-js).
@@ -22,19 +22,20 @@ container never speaks OCPP directly: it only starts/supervises the relay
 sub-container through the SDK and polls its internal state over HTTP.
 
 ```
-Charge point (OCPP 1.6J)
-        |
-        v
-┌── sub-container "gateway" (gateway/) ──┐
-│ RPCServer <-> RPCClient relay to the   │
-│ configured origin cloud URL, passive   │
-│ observation only, never decisional     │
-└─────────────────────────────────────────┘
+Charge point A ─┐                     Charge point B ─┐
+(OCPP 1.6J)      │                     (OCPP 1.6J)      │
+                 v  same port                          v
+┌── sub-container "gateway" (gateway/) ───────────────────┐
+│ RPCServer <-> one RPCClient per charge point, routed to │
+│ each one's own origin cloud by its real OCPP identity   │
+│ (ChargerRegistry) - passive observation, never decisional│
+└───────────────────────────────────────────────────────────┘
         ^  internal HTTP (private network, DNS alias "gateway")
-        |
+        |  GET /api/state, POST /api/chargers (live map sync)
 ┌── main container (this repo's root) ───┐
 │ SDK wiring: starts/polls the gateway,  │
-│ publishes device(s)/states to Gladys   │
+│ publishes device(s)/states to Gladys,  │
+│ add_charger action configures routing  │
 └─────────────────────────────────────────┘
 ```
 
@@ -42,42 +43,60 @@ Charge point (OCPP 1.6J)
 
 ```
 .
-├─ index.js                          # SDK bootstrap + gateway sub-container lifecycle
+├─ index.js                          # SDK bootstrap, gateway lifecycle, add_charger action
 ├─ src/
-│  ├─ config.js                      # config defaults + normalization
-│  ├─ gatewayClient.js               # HTTP client + lifecycle guard for the "gateway" sub-container
+│  ├─ config.js                      # config defaults + normalization (folds in `chargers`)
+│  ├─ chargers.js                    # free-config charger store: parse/serialize/upsert/remove
+│  ├─ gatewayClient.js               # HTTP client for the "gateway" sub-container (state, live map sync)
 │  └─ devices/
 │     ├─ index.js                    #   registry (single blueprint, see below)
-│     └─ charger.js                  #   one device per physical connector, discovered dynamically
+│     └─ charger.js                  #   one device per (configured charge point x connector)
 ├─ gateway/                          # standalone sub-project: the OCPP relay sub-container
 │  ├─ src/
-│  │  ├─ gateway.ts                  #   RPCServer (charge point) <-> RPCClient (origin cloud)
+│  │  ├─ gateway.ts                  #   RPCServer (charge points) <-> RPCClient (each origin cloud)
+│  │  ├─ chargerRegistry.ts          #   live identity -> origin cloud URL map + pending identities
 │  │  ├─ originConnection.ts         #   generic path-segment vs. query-string identity addressing
 │  │  ├─ observe.ts                  #   OCPP message -> internal state updates
 │  │  ├─ state.ts                    #   ChargerState / ConnectorState / StateStore
 │  │  ├─ meterValues.ts              #   OCPP MeterValues -> ConnectorState mapping
 │  │  ├─ ocpp16.ts                   #   OCPP 1.6 message types (TypeScript only)
-│  │  └─ stateApi.ts                 #   internal-only GET /api/state (polled by gatewayClient.js)
+│  │  ├─ exchangeLog.ts              #   formats one relayed OCPP exchange as a stdout line
+│  │  └─ stateApi.ts                 #   internal-only GET /api/state, POST /api/chargers
 │  ├─ test/                          #   node:test, own package.json/tsconfig.json
 │  └─ Dockerfile                     #   sub-container image
 ├─ docs/
 │  ├─ en.md / fr.md                  # user documentation (re-hosted by Gladys)
-├─ gladys-assistant-integration.json # manifest (config_schema + the "gateway" sub-container declaration)
+├─ gladys-assistant-integration.json # manifest (config_schema + add_charger action + "gateway" sub-container)
 ├─ Dockerfile                        # main container image, Node 24 Alpine, read-only rootfs
 ├─ .github/workflows/                # CI: builds + publishes BOTH images (main + gateway)
 └─ cover.png                         # catalog cover, 800×534 px, ≤150 KB
 ```
 
-## Dynamic multi-connector discovery
+## Dynamic multi-charger, multi-connector discovery
 
-A charge point can have several physical connectors. Rather than assuming a
-fixed count, `src/devices/charger.js`'s `buildDevices()` asks the gateway
-sub-container for whatever connectors it has actually observed
-(`StatusNotification`) since it last started, and offers one Gladys device
-per connector (OCPP connector `0`, the aggregate charge point, is always
-excluded). The set naturally grows as new connectors report in; Gladys's
+Any number of charge points can be configured, one at a time, via the
+`add_charger` manifest action (identity + origin cloud URL) — `config_schema`
+is a flat, fixed list of fields, it cannot represent "add as many charge
+points as you want", so the set lives in free internal config storage
+(`src/chargers.js`, key `chargers_json`) instead, pushed live to the gateway
+sub-container (`POST /api/chargers`, see `gateway/src/chargerRegistry.ts`) -
+no container restart needed to add, update, or remove one.
+
+A charge point can also have several physical connectors. Rather than
+assuming a fixed count, `src/devices/charger.js`'s `buildDevices()` asks the
+gateway sub-container what it has actually observed (`StatusNotification`)
+per configured charge point since it last started, and offers one Gladys
+device per (charge point × connector) pair (OCPP connector `0`, the
+aggregate charge point, is always excluded). The set naturally grows as new
+charge points are configured and new connectors report in; Gladys's
 discovery model handles this cleanly since `publishDiscoveredDevices`
 replaces the whole offered list on every call, not just the delta.
+
+A charge point connecting with an identity the registry doesn't know yet is
+recorded as **pending** and closed cleanly (nothing to relay it to) - its
+identity is surfaced in the integration's connection status message so the
+user can copy it into the `add_charger` action without hunting for a serial
+number on a sticker.
 
 ## Generic origin-cloud identity addressing
 
@@ -112,8 +131,13 @@ mode is mainly useful for exercising the SDK wiring itself.
 ```bash
 cd gateway
 npm install
-GATEWAY_PORT=9321 UI_PORT=9080 ORIGIN_CLOUD_URL="wss://your-charger-vendor-cloud/..." npm start
+GATEWAY_PORT=9321 UI_PORT=9080 npm start
 ```
+
+No env var is required anymore: the gateway starts with an empty charger
+registry and only relays charge points configured live, via
+`POST http://localhost:9080/api/chargers` (body `{"chargers": {"<identity>": "<origin cloud url>"}}`)
+— exactly what `src/gatewayClient.js`'s `syncChargerMap()` does in production.
 
 ## Quality checks
 

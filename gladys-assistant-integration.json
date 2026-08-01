@@ -3,8 +3,8 @@
   "type": "device",
   "name": "OCPP EV Charger Gateway",
   "description": {
-    "en": "Read-only supervision of an OCPP 1.6 EV charger, relayed to your own charger cloud.",
-    "fr": "Supervision en lecture seule d'une borne OCPP 1.6, relayee vers le cloud d'origine."
+    "en": "Read-only supervision of OCPP 1.6 EV chargers, each relayed to its own charger cloud.",
+    "fr": "Supervision en lecture seule de bornes OCPP 1.6, chacune relayee vers son propre cloud d'origine."
   },
   "version": "0.2.1",
   "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.2.1",
@@ -22,22 +22,9 @@
         "fr": "Fonctionnement"
       },
       "description": {
-        "en": "This integration runs its own OCPP relay in a companion container. Your charge point connects to the port Gladys assigns below instead of the vendor's cloud, and the relay forwards everything to that cloud so nothing breaks. Exposing this port makes the relay reachable on your LAN - read the documentation before installing.",
-        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur. Votre borne se connecte au port assigne par Gladys ci-dessous a la place du cloud du fabricant, et le relais transmet tout vers ce cloud pour ne rien casser. Cela rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
+        "en": "This integration runs its own OCPP relay in a companion container, started automatically. Point any number of charge points at the port Gladys assigns below (same port for all) instead of the vendor's cloud - the relay forwards everything to the right cloud so nothing breaks. A charge point that connects without being configured yet shows up as \"detected, awaiting configuration\" in the status below and in the gateway's logs: use the \"Configure a detected charge point\" action to give it its own origin cloud URL. Exposing this port makes the relay reachable on your LAN - read the documentation before installing.",
+        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur, demarre automatiquement. Pointez autant de bornes que necessaire vers le port assigne par Gladys ci-dessous (le meme port pour toutes) a la place du cloud du fabricant - le relais transmet tout vers le bon cloud pour ne rien casser. Une borne qui se connecte sans etre encore configuree apparait comme \"detectee, en attente de configuration\" dans le statut ci-dessous et dans les logs du relais : utilisez l'action \"Configurer une borne detectee\" pour lui assigner son URL de cloud d'origine. Cela rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
       }
-    },
-    {
-      "key": "origin_cloud_url",
-      "type": "string",
-      "label": {
-        "en": "Origin cloud URL",
-        "fr": "URL du cloud d'origine"
-      },
-      "description": {
-        "en": "OCPP server URL shown in your charger vendor's app (read it BEFORE reconfiguring the charger - it is the only way back to the vendor cloud). Paste it exactly as shown, including any trailing query string (e.g. ending in \"?sn=\").",
-        "fr": "URL du serveur OCPP affichee dans l'app du fabricant (a relever AVANT de reconfigurer la borne : c'est le seul moyen de revenir au cloud d'origine). Collez-la telle quelle, y compris une eventuelle chaine de requete finale (ex. se terminant par \"?sn=\")."
-      },
-      "required": true
     },
     {
       "key": "poll_frequency",
@@ -47,8 +34,8 @@
         "fr": "Intervalle de rafraichissement (s)"
       },
       "description": {
-        "en": "How often the relay's state is polled, in seconds.",
-        "fr": "Frequence d'interrogation de l'etat du relais, en secondes."
+        "en": "How often each charge point's state is polled, in seconds.",
+        "fr": "Frequence d'interrogation de l'etat de chaque borne, en secondes."
       },
       "required": false,
       "default": 30,
@@ -56,17 +43,51 @@
       "max": 3600
     }
   ],
+  "actions": [
+    {
+      "key": "add_charger",
+      "label": {
+        "en": "Configure a detected charge point",
+        "fr": "Configurer une borne detectee"
+      },
+      "description": {
+        "en": "Assign an origin cloud URL to a charge point identity (find it in the connection status below, or in the gateway's logs, once the charge point has tried to connect at least once). Leave the URL empty to remove a previously configured charge point.",
+        "fr": "Associe une URL de cloud d'origine a l'identity d'une borne (visible dans le statut de connexion ci-dessous, ou dans les logs du relais, une fois que la borne a tente de se connecter au moins une fois). Laissez l'URL vide pour retirer une borne deja configuree."
+      },
+      "timeout_seconds": 15,
+      "fields": [
+        {
+          "key": "identity",
+          "type": "string",
+          "label": {
+            "en": "Charge point identity",
+            "fr": "Identity de la borne"
+          },
+          "required": true
+        },
+        {
+          "key": "origin_cloud_url",
+          "type": "string",
+          "label": {
+            "en": "Origin cloud URL (empty to remove)",
+            "fr": "URL du cloud d'origine (vide pour retirer)"
+          },
+          "required": false
+        }
+      ]
+    }
+  ],
   "containers": [
     {
       "name": "gateway",
       "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration-gateway:0.2.1",
-      "start": "manual",
+      "start": "auto",
       "ports": [
         {
           "container_port": 9321,
           "label": {
-            "en": "OCPP (charge point connects here)",
-            "fr": "OCPP (la borne se connecte ici)"
+            "en": "OCPP (charge points connect here)",
+            "fr": "OCPP (les bornes se connectent ici)"
           }
         }
       ],

@@ -1,15 +1,25 @@
 /**
- * OCPP 1.6 relay (charge point <-> configured origin cloud), the companion
- * sub-container of the Gladys OCPP integration.
+ * OCPP 1.6 relay (charge points <-> each one's own configured origin cloud),
+ * the companion sub-container of the Gladys OCPP integration.
  *
  * This file has no idea it may run under Gladys supervision: it only speaks
- * OCPP + a tiny internal HTTP state API (see `stateApi.ts`), nothing specific
- * to the Gladys SDK lives here - that lives in the main integration container
+ * OCPP + a tiny internal HTTP API (see `stateApi.ts`), nothing specific to
+ * the Gladys SDK lives here - that lives in the main integration container
  * (`../index.js`), which polls this process over its private-network DNS
- * alias (see `../src/gatewayClient.js`).
+ * alias (see `../src/gatewayClient.js`) and pushes the live set of
+ * configured charge points via `POST /api/chargers` (see `chargerRegistry.ts`).
+ *
+ * Any number of charge points share this single port. Each one is routed to
+ * its own origin cloud independently, resolved by its real OCPP identity (the
+ * one it announces on connection) against the live registry - never a
+ * position/index in the URL, which would depend on unverifiable per-vendor
+ * firmware behavior. A charge point connecting with an identity the registry
+ * doesn't know yet is recorded as "pending" and closed cleanly: nothing to
+ * relay it to until the user configures it in Gladys (the `add_charger`
+ * action).
  *
  * Two connections per charge point: a CSMS-side server facing the charge
- * point, and an OCPP client facing the configured origin cloud (the
+ * point, and an OCPP client facing its configured origin cloud (the
  * "primary"). The business logic is an OBSERVATION of the primary's REAL
  * response, never an autonomous decision: the transactionId recorded in the
  * internal state is the one the primary assigned, never invented locally -
@@ -28,24 +38,22 @@ import { fileURLToPath } from 'node:url';
 import { RPCServer, RPCClient } from 'ocpp-rpc';
 import type { IHandlersOption } from 'ocpp-rpc';
 import { StateStore } from './state.ts';
+import { ChargerRegistry } from './chargerRegistry.ts';
 import { observe } from './observe.ts';
 import { createStateApiServer } from './stateApi.ts';
 import { formatExchangeLog } from './exchangeLog.ts';
-import {
-  buildPrimaryConnectionOptions,
-  type PrimaryConnectionOptions,
-} from './originConnection.ts';
+import { buildPrimaryConnectionOptions } from './originConnection.ts';
 
 export interface GatewayOptions {
   protocols?: string[];
-  buildPrimaryConnection(identity: string): PrimaryConnectionOptions;
 }
 
 const DEFAULT_PROTOCOLS = ['ocpp1.6'];
 
 export const store = new StateStore();
+export const registry = new ChargerRegistry();
 
-export function createGatewayServer(options: GatewayOptions) {
+export function createGatewayServer(options: GatewayOptions = {}) {
   const protocols = options.protocols ?? DEFAULT_PROTOCOLS;
 
   const server = new RPCServer({
@@ -60,19 +68,29 @@ export function createGatewayServer(options: GatewayOptions) {
   server.on('client', (client: any) => {
     const identity = client.identity as string;
     const state = store.get(identity);
+
+    const originCloudUrl = registry.resolve(identity);
+    if (originCloudUrl === undefined) {
+      registry.recordPending(identity);
+      console.log(`[connect] ${identity} - no origin cloud configured yet, closing (pending)`);
+      client.close({ code: 1011, reason: 'awaiting configuration in Gladys' }).catch(() => {});
+      return;
+    }
+
     console.log(`[connect] ${identity}`);
 
-    // buildPrimaryConnection() can throw synchronously (e.g. a misconfigured
-    // origin cloud URL, see originConnection.ts) - it MUST be caught here.
-    // Left unguarded, the exception propagates up through this synchronous
-    // 'client' event handler into ocpp-rpc's own connection setup, which
-    // reacts by closing the raw WebSocket with the error's message as the
-    // close reason - and a WS close frame is capped at 123 bytes, so a long,
-    // helpful error message crashes the ENTIRE gateway process with an
-    // unrelated RangeError instead of just rejecting this one connection.
-    let primaryConn: PrimaryConnectionOptions;
+    // buildPrimaryConnectionOptions() can throw synchronously (e.g. a
+    // malformed origin cloud URL, see originConnection.ts) - it MUST be
+    // caught here. Left unguarded, the exception propagates up through this
+    // synchronous 'client' event handler into ocpp-rpc's own connection
+    // setup, which reacts by closing the raw WebSocket with the error's
+    // message as the close reason - and a WS close frame is capped at 123
+    // bytes, so a long, helpful error message crashes the ENTIRE gateway
+    // process with an unrelated RangeError instead of just rejecting this
+    // one connection.
+    let primaryConn: ReturnType<typeof buildPrimaryConnectionOptions>;
     try {
-      primaryConn = options.buildPrimaryConnection(identity);
+      primaryConn = buildPrimaryConnectionOptions(originCloudUrl, identity);
     } catch (err) {
       console.error(
         `[connect] ${identity}: cannot determine the origin cloud connection: ${(err as Error).message ?? err}`,
@@ -160,20 +178,13 @@ export function createGatewayServer(options: GatewayOptions) {
 
 async function main() {
   const port = Number.parseInt(process.env.GATEWAY_PORT ?? '9321', 10);
-  const originCloudUrl = process.env.ORIGIN_CLOUD_URL;
-  if (!originCloudUrl) {
-    throw new Error('ORIGIN_CLOUD_URL is required');
-  }
-
-  const buildPrimaryConnection = (identity: string) =>
-    buildPrimaryConnectionOptions(originCloudUrl, identity);
-  const server = createGatewayServer({ buildPrimaryConnection });
+  const server = createGatewayServer();
 
   await server.listen(port);
   console.log(`gateway listening on ws://0.0.0.0:${port}/`);
 
   const stateApiPort = Number.parseInt(process.env.UI_PORT ?? '9080', 10);
-  const stateApiServer = createStateApiServer(store);
+  const stateApiServer = createStateApiServer(store, registry);
   await new Promise<void>((resolve) => stateApiServer.listen(stateApiPort, resolve));
   console.log(
     `gateway internal state API listening on http://0.0.0.0:${stateApiPort}/ (private network only)`,

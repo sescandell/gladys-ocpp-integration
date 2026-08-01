@@ -33,8 +33,9 @@ test('top-level shape', () => {
   assert.ok(manifest.docker_image.length > 0);
 });
 
-test('V1 is read-only: no actions declared', () => {
-  assert.deepEqual(manifest.actions ?? [], []);
+test('V1 is read-only: the only action manages charge point configuration, never controls a device', () => {
+  assert.equal(manifest.actions?.length, 1);
+  assert.equal(manifest.actions[0].key, 'add_charger');
 });
 
 test('config_schema defaults stay consistent with DEFAULT_CONFIG', () => {
@@ -49,22 +50,27 @@ test('config_schema defaults stay consistent with DEFAULT_CONFIG', () => {
   }
 });
 
-test('origin_cloud_url is a required, plain (readable) text field', () => {
-  // Deliberately NOT "secret": the user needs to visually confirm what they
-  // pasted (and re-check it against the vendor app) - masking it would work
-  // against that, and it isn't a credential in the same sense an API key is.
-  const field = manifest.config_schema.find((f) => f.key === 'origin_cloud_url');
-  assert.ok(field, 'origin_cloud_url must be declared');
-  assert.equal(field.type, 'string');
-  assert.equal(field.required, true);
-  assert.ok(field.label?.en, 'needs an English label');
+test('config_schema only has the intro section and poll_frequency - no fixed per-charger fields', () => {
+  // Deliberately no "charger_1_identity"-style slots: the set of configured
+  // charge points is unbounded and managed entirely through the
+  // `add_charger` action + free internal config storage (src/chargers.js),
+  // not the generated form (config_schema is a flat, fixed list of fields -
+  // it cannot represent "add as many charge points as you want").
+  assert.deepEqual(
+    manifest.config_schema.map((f) => f.key),
+    ['intro', 'poll_frequency'],
+  );
 });
 
-test('no charger_identity field: the identity is learned from the real OCPP connection, never configured', () => {
-  assert.equal(
-    manifest.config_schema.some((f) => f.key === 'charger_identity'),
-    false,
-  );
+test('add_charger action: identity required, origin_cloud_url optional (empty = remove)', () => {
+  const action = manifest.actions.find((a) => a.key === 'add_charger');
+  assert.ok(action, 'add_charger must be declared');
+  const identityField = action.fields.find((f) => f.key === 'identity');
+  const urlField = action.fields.find((f) => f.key === 'origin_cloud_url');
+  assert.ok(identityField, 'identity field must be declared');
+  assert.equal(identityField.required, true);
+  assert.ok(urlField, 'origin_cloud_url field must be declared');
+  assert.equal(urlField.required, false);
 });
 
 test('section fields are purely presentational', () => {
@@ -97,9 +103,12 @@ test('exactly one declared sub-container: "gateway"', () => {
   assert.equal(manifest.containers[0].name, 'gateway');
 });
 
-test('the gateway sub-container only publishes the OCPP port, started manually', () => {
+test('the gateway sub-container only publishes the OCPP port, started automatically', () => {
   const gateway = manifest.containers[0];
-  assert.equal(gateway.start, 'manual');
+  // "auto": the gateway needs no config to be useful (it detects and reports
+  // unconfigured charge points on its own), unlike the old single-URL design
+  // where it had to wait for that URL before starting made any sense.
+  assert.equal(gateway.start, 'auto');
   assert.equal(
     gateway.ports.length,
     1,
