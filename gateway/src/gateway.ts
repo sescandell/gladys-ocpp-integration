@@ -61,7 +61,25 @@ export function createGatewayServer(options: GatewayOptions) {
     const state = store.get(identity);
     console.log(`[connect] ${identity}`);
 
-    const primaryConn = options.buildPrimaryConnection(identity);
+    // buildPrimaryConnection() can throw synchronously (e.g. a misconfigured
+    // origin cloud URL, see originConnection.ts) - it MUST be caught here.
+    // Left unguarded, the exception propagates up through this synchronous
+    // 'client' event handler into ocpp-rpc's own connection setup, which
+    // reacts by closing the raw WebSocket with the error's message as the
+    // close reason - and a WS close frame is capped at 123 bytes, so a long,
+    // helpful error message crashes the ENTIRE gateway process with an
+    // unrelated RangeError instead of just rejecting this one connection.
+    let primaryConn: PrimaryConnectionOptions;
+    try {
+      primaryConn = options.buildPrimaryConnection(identity);
+    } catch (err) {
+      console.error(
+        `[connect] ${identity}: cannot determine the origin cloud connection: ${(err as Error).message ?? err}`,
+      );
+      client.close({ code: 1011, reason: 'gateway configuration error' }).catch(() => {});
+      return;
+    }
+
     const primaryClient = new RPCClient({
       endpoint: primaryConn.endpoint,
       identity: primaryConn.identity,

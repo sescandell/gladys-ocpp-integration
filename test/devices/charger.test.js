@@ -185,3 +185,14 @@ test('onPoll: does nothing when the gateway knows no charge point at all', async
   await charger.onPoll(gladys, config, device, async () => ({}));
   assert.equal(gladys.published.length, 0);
 });
+
+test('onPoll: does not throw when the gateway is unreachable (transient during startup/restart)', async () => {
+  const gladys = createFakeGladys();
+  const device = { external_id: 'ev-charger-connector:CP-1:1' };
+  const fetchState = async () => {
+    throw new Error('connect ECONNREFUSED 172.18.0.3:9080');
+  };
+
+  await assert.doesNotReject(() => charger.onPoll(gladys, config, device, fetchState));
+  assert.equal(gladys.published.length, 0);
+});

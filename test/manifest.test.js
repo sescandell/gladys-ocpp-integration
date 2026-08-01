@@ -49,10 +49,13 @@ test('config_schema defaults stay consistent with DEFAULT_CONFIG', () => {
   }
 });
 
-test('origin_cloud_url is a required secret field', () => {
+test('origin_cloud_url is a required, plain (readable) text field', () => {
+  // Deliberately NOT "secret": the user needs to visually confirm what they
+  // pasted (and re-check it against the vendor app) - masking it would work
+  // against that, and it isn't a credential in the same sense an API key is.
   const field = manifest.config_schema.find((f) => f.key === 'origin_cloud_url');
   assert.ok(field, 'origin_cloud_url must be declared');
-  assert.equal(field.type, 'secret');
+  assert.equal(field.type, 'string');
   assert.equal(field.required, true);
   assert.ok(field.label?.en, 'needs an English label');
 });

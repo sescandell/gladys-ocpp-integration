@@ -187,3 +187,61 @@ test('gateway relay: end to end wiring', async (t) => {
     },
   );
 });
+
+test('a synchronous error from buildPrimaryConnection() closes the connection cleanly, never crashes the process', async (t) => {
+  const REGRESSION_GATEWAY_PORT = 19528;
+
+  // Regression test for a real incident: originConnection.ts's guiding error
+  // message ("Origin cloud URL has a query string but no empty parameter...")
+  // is far longer than the 123-byte limit of a WebSocket close frame reason.
+  // Left unguarded, this used to crash the whole gateway process (a RangeError
+  // thrown deep inside ocpp-rpc/ws while trying to close the socket with that
+  // over-long reason) instead of just rejecting the one problematic
+  // connection - see gateway.ts's try/catch around buildPrimaryConnection().
+  const longMessage =
+    'Origin cloud URL has a query string but no empty parameter to receive the charge point identity (expected something like "...?sn=") - paste the URL exactly as shown by the vendor app.';
+  assert.ok(
+    Buffer.byteLength(longMessage, 'utf8') > 123,
+    'the test fixture must reproduce the over-123-byte condition',
+  );
+
+  const gatewayServer = createGatewayServer({
+    buildPrimaryConnection: () => {
+      throw new Error(longMessage);
+    },
+  });
+  await gatewayServer.listen(REGRESSION_GATEWAY_PORT);
+  t.after(() => gatewayServer.close({}));
+
+  // `reconnect: false`: the default `ocpp-rpc` RPCClient behavior is to
+  // silently retry forever on a server-initiated close (never emitting
+  // 'close' at all - see client.js's _handleDisconnect) - appropriate
+  // resilience for a real charge point, but it would make this test hang
+  // waiting for an event that never fires. Disabled here purely to observe
+  // one clean close.
+  const client = new RPCClient({
+    endpoint: `ws://localhost:${REGRESSION_GATEWAY_PORT}`,
+    identity: 'CP-REGRESSION',
+    protocols: ['ocpp1.6'],
+    reconnect: false,
+  } as ClientOptions);
+
+  const closed = new Promise<void>((resolve) => client.once('close', () => resolve()));
+  await client.connect();
+  await closed; // would hang/time out if the server crashed instead of closing cleanly
+
+  // The server is still alive afterward - proof the PROCESS survived, not
+  // just that this one client got a clean close. A second, unrelated
+  // connection attempt goes through the same (still-throwing, by this test's
+  // setup) code path and is itself cleanly closed rather than hanging or
+  // taking the whole server down with it.
+  const secondClient = new RPCClient({
+    endpoint: `ws://localhost:${REGRESSION_GATEWAY_PORT}`,
+    identity: 'CP-AFTER-REGRESSION',
+    protocols: ['ocpp1.6'],
+    reconnect: false,
+  } as ClientOptions);
+  const secondClosed = new Promise<void>((resolve) => secondClient.once('close', () => resolve()));
+  await secondClient.connect();
+  await secondClosed;
+});

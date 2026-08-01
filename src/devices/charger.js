@@ -226,7 +226,17 @@ export const charger = {
   },
 
   async onPoll(gladys, config, device, fetchState = fetchGatewayState) {
-    const allChargers = await fetchState();
+    let allChargers;
+    try {
+      allChargers = await fetchState();
+    } catch (err) {
+      // The gateway sub-container can be briefly unreachable (still starting
+      // up after startContainer(), mid-restart...) - not an error worth
+      // failing the poll command over, see buildDevices() above for the same
+      // reasoning. Skip this cycle, the next poll will pick up fresh data.
+      logger.warn(`Gateway unreachable, skipping poll for ${device.external_id}`, err);
+      return;
+    }
     const chargeState = pickSupervisedCharger(allChargers);
     if (!chargeState) return;
 

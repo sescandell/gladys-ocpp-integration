@@ -28,7 +28,7 @@
     },
     {
       "key": "origin_cloud_url",
-      "type": "secret",
+      "type": "string",
       "label": {
         "en": "Origin cloud URL",
         "fr": "URL du cloud d'origine"
