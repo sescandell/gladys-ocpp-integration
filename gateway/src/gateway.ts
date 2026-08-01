@@ -30,6 +30,7 @@ import type { IHandlersOption } from 'ocpp-rpc';
 import { StateStore } from './state.ts';
 import { observe } from './observe.ts';
 import { createStateApiServer } from './stateApi.ts';
+import { formatExchangeLog } from './exchangeLog.ts';
 import {
   buildPrimaryConnectionOptions,
   type PrimaryConnectionOptions,
@@ -89,7 +90,9 @@ export function createGatewayServer(options: GatewayOptions) {
 
     // CALL initiated by the charge point: relayed to the primary (only its
     // response matters to the charge point, asymmetry by design), then
-    // observed to update the internal state.
+    // observed to update the internal state. Every exchange is logged in
+    // full (timestamp, params, response/error) - the only way to see what's
+    // actually happening on the wire, read via Gladys's container log viewer.
     client.handle(async (args: IHandlersOption) => {
       const method = args.method as string;
       const params = args.params;
@@ -98,10 +101,21 @@ export function createGatewayServer(options: GatewayOptions) {
       try {
         const response = await primaryClient.call(method, params, { signal });
         observe(state, method, params, response);
+        console.log(
+          formatExchangeLog('EV Charger -> Primary', identity, method, params, {
+            ok: true,
+            response,
+          }),
+        );
         return response;
       } catch (err) {
         observe(state, method, params, undefined);
-        console.error(`[relay:${identity}] ${method} failed: ${(err as Error).message ?? err}`);
+        console.error(
+          formatExchangeLog('EV Charger -> Primary', identity, method, params, {
+            ok: false,
+            error: (err as Error).message ?? String(err),
+          }),
+        );
         throw err;
       }
     });
@@ -110,11 +124,22 @@ export function createGatewayServer(options: GatewayOptions) {
     // point, response sent back to the primary.
     primaryClient.handle(async (args: IHandlersOption) => {
       const method = args.method as string;
+      const params = args.params;
       try {
-        return await client.call(method, args.params, { signal: args.signal as AbortSignal });
+        const response = await client.call(method, params, { signal: args.signal as AbortSignal });
+        console.log(
+          formatExchangeLog('Primary -> EV Charger', identity, method, params, {
+            ok: true,
+            response,
+          }),
+        );
+        return response;
       } catch (err) {
         console.error(
-          `[relay:${identity}] primary->charge point ${method} failed: ${(err as Error).message ?? err}`,
+          formatExchangeLog('Primary -> EV Charger', identity, method, params, {
+            ok: false,
+            error: (err as Error).message ?? String(err),
+          }),
         );
         throw err;
       }
