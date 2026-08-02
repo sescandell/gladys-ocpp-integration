@@ -109,6 +109,17 @@ hardware only, connector) until the gateway actually observes more via
 surfaces as an "Update" button in Gladys - the user stays in control of
 structural changes.
 
+Each device also carries its configured origin cloud URL as a `param` (not
+a `feature` - it's config, not telemetry): Gladys renders a device's
+`params` as a plain read-only table on its card, in Discovery _before_
+creation and in the device list _after_, silently kept in sync on every
+re-publish (no "Update" click needed, unlike a features structure change).
+This is the only place a charge point's configured URL is surfaced in the
+UI - `config_schema` can't render this open-ended, per-charger data as a
+form field (Gladys config forms are a flat, fixed list of fields), and
+cramming it into the connection status message (see below) would mix
+business config into what reads as an operational/ops caption.
+
 ## Generic origin-cloud identity addressing
 
 Some vendor clouds expect the charge point identity in the URL's query

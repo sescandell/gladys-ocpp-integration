@@ -53,24 +53,26 @@ matters.
    connection to that vendor's cloud — it is invisible to the charge point
    itself. As soon as the action completes, the charge point shows up in the
    **Discovery** tab, ready to be created as a device — it does not need to
-   have connected yet.
-4. Open the integration's supervision block to find the **host port**
-   assigned by Gladys for the `gateway` sub-container's OCPP port (an "Open"
-   / port label next to the `gateway` entry, also echoed in the connection
-   status message). This port is the **same for every charge point**.
-5. In the charge point's vendor app, point its OCPP server URL to
-   `ws://<this-Gladys-host's-LAN-address>:<assigned-port>/` — standard OCPP
-   addressing (the charge point identifies itself in the URL path, the same
-   way it always has).
+   have connected yet. Its configured origin cloud URL is shown right there
+   on its card (and later, once created, on the device itself) — that's the
+   only place to check it, there is no list of configured charge points
+   anywhere else.
+4. Open the integration's **Supervision** screen: the connection status
+   shows a ready-to-use OCPP URL, `ws://<this Gladys host's LAN
+address>:<port>/` — the port is already filled in for you, just replace
+   the placeholder with this Gladys host's actual LAN address. This URL is
+   the **same for every charge point**.
+5. In the charge point's vendor app, point its OCPP server URL there.
 6. Since it is already configured, the charge point connects and starts
    relaying right away — the device created in step 3 starts reporting real
    data.
-7. Repeat steps 2-6 for every other charge point — same port, its own
+7. Repeat steps 2-6 for every other charge point — same URL, its own
    identity, its own origin cloud URL, even a different vendor.
 
 To fix a mistake or change a charge point's origin cloud URL, run the action
-again with the same identity and the corrected URL. To remove a charge
-point, run the action with its identity and an **empty** URL.
+again with the same identity and the corrected URL (check its current URL
+on its device card first). To remove a charge point, run the action with
+its identity and an **empty** URL.
 
 If a charge point connects before you've added it here (or with an identity
 that doesn't match what you typed), it is rejected and listed as **detected,

@@ -96,10 +96,18 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
    * Ensures the gateway sub-container is running, pushes the current set of
    * configured charge points to it (a live, full replace - never a restart,
    * see gatewayClient.js), and reflects it all in the connection status
-   * (visible on the Configuration screen): the assigned host port, how many
-   * charge points are configured, and which identities have been seen
-   * connecting without being configured yet ("pending" - a typo-diagnostic
-   * fallback, see docs/en.md - not the intended discovery flow).
+   * (visible on the Supervision screen only - Gladys only renders it on
+   * Configuration for integrations with an `oauth2` config field, which
+   * this manifest doesn't have): the ready-to-use OCPP URL to point charge
+   * points at (host part templated - we only know the assigned port, not
+   * this Gladys host's own LAN address), how many charge points are
+   * configured, and which identities have been seen connecting without
+   * being configured yet ("pending" - a typo-diagnostic fallback, see
+   * docs/en.md - not the intended discovery flow). Each individual charge
+   * point's configured origin cloud URL is NOT listed here - it's shown on
+   * that charge point's own device card instead (Discovery, then the
+   * device list - see src/devices/charger.js's `params`), which is a
+   * better fit than this single-line, ops-flavored status caption.
    */
   async function reconcileGateway() {
     try {
@@ -117,13 +125,13 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
 
       const en = [
         hostPort
-          ? `Relay running on port ${hostPort} of this Gladys host.`
+          ? `OCPP URL: ws://<this Gladys host's LAN address>:${hostPort}/ - enter this in each charge point's vendor app.`
           : 'Relay running, host port not yet assigned.',
         `${configuredCount} charge point(s) configured.`,
       ];
       const fr = [
         hostPort
-          ? `Relais actif sur le port ${hostPort} de cet hôte.`
+          ? `URL OCPP : ws://<adresse LAN de cet hôte Gladys>:${hostPort}/ - à saisir dans l'application de chaque borne.`
           : 'Relais actif, port hôte pas encore assigné.',
         `${configuredCount} borne(s) configurée(s).`,
       ];
@@ -160,8 +168,9 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
     await blueprint.onPoll(gladys, config, device);
   });
 
-  // --- Configuration updated by the user (poll_frequency only - the set of --
-  // --- charge points is managed by the add_charger action, see below) --------
+  // --- Configuration updated by the user (the config form is just a static --
+  // --- info section today - no user-editable value; the set of charge -------
+  // --- points is managed entirely through the add_charger action, below) ----
   gladys.onConfigUpdated(async (newConfig) => {
     logger.info('onConfigUpdated -> new configuration received');
     config = normalizeConfig(newConfig);
@@ -206,7 +215,10 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
 
     return originCloudUrl === ''
       ? { en: `Charge point "${identity}" removed.`, fr: `Borne "${identity}" retirée.` }
-      : { en: `Charge point "${identity}" configured.`, fr: `Borne "${identity}" configurée.` };
+      : {
+          en: `Charge point "${identity}" configured. Check the Discovery tab to add it as a device - its origin cloud URL is shown there.`,
+          fr: `Borne "${identity}" configurée. Consultez l'onglet Découverte pour l'ajouter comme appareil - son URL de cloud d'origine y est affichée.`,
+        };
   });
 
   // --- Connection lifecycle ----------------------------------------------------

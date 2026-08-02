@@ -109,6 +109,7 @@ test('add_charger action: called with fields directly (the real SDK shape), not 
   });
 
   assert.match(message.en, /CP-1.*configured/);
+  assert.match(message.en, /Discovery/i);
   assert.equal(gladys.setConfigCalls.length, 1);
   const stored = JSON.parse(gladys.setConfigCalls[0].chargers_json);
   assert.equal(stored['CP-1'], 'wss://cloud-a/ocpp?sn=');
@@ -151,6 +152,19 @@ test("connected event: called with no arguments (the real SDK shape), doesn't th
   assert.ok(typeof connectedHandler === 'function', 'a "connected" listener must be registered');
   await connectedHandler();
   assert.ok(gladys.connectionStatuses.length > 0);
+});
+
+test('reconcileGateway (via "connected"): connection status shows the ready-to-use OCPP URL, not a generic sentence', async (t) => {
+  const gladys = await setup(t);
+
+  await gladys.handlers.events['connected']();
+
+  const status = gladys.connectionStatuses.at(-1);
+  assert.equal(status.connected, true);
+  // Host port 41234 comes from the fake container fixture in setup().
+  assert.match(status.message.en, /ws:\/\/.*:41234\//);
+  assert.match(status.message.fr, /ws:\/\/.*:41234\//);
+  assert.doesNotMatch(status.message.en, /Relay running on port/);
 });
 
 test('reconcileGateway (via "connected"): retries the gateway sync and recovers if it comes up in time', async (t) => {

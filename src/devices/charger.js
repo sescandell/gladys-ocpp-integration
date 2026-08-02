@@ -30,6 +30,13 @@
 // device surfaces as an "Update" button in Gladys (see
 // `publishDiscoveredDevices`'s doc comment in the SDK) - the user stays in
 // control of structural changes, same as day one.
+//
+// Each device also carries its configured origin cloud URL as a `param`
+// (not a `feature`: it's config, not telemetry) - a plain read-only table
+// Gladys renders on the device's card, in Discovery before creation AND in
+// the device list after, silently kept in sync on every re-publish (no
+// "Update" click needed for params, unlike a features structure change).
+// This is the only place a charger's configured URL is visible in the UI.
 // -----------------------------------------------------------------------------
 
 import {
@@ -75,21 +82,13 @@ const DEFAULT_CONNECTOR_ID = 1;
 
 // A discovered device's poll_frequency is NOT a free number: Gladys core
 // rejects (and fails the ENTIRE publishDiscoveredDevices call, for every
-// device in the batch) any value other than these exact milliseconds,
-// verified against server/utils/constants.js's DEVICE_POLL_FREQUENCIES.
-// The manifest's poll_frequency config field is a matching `select` (values
-// in seconds, see gladys-assistant-integration.json) precisely so this list
-// stays in sync - but snapping defensively here means a stale config value
-// saved under an older, laxer version of that field can never reproduce the
-// same failure again.
-const DEVICE_POLL_FREQUENCIES_SECONDS = [1, 2, 10, 15, 30, 60];
-
-function toDevicePollFrequencyMs(seconds) {
-  const nearest = DEVICE_POLL_FREQUENCIES_SECONDS.reduce((best, candidate) =>
-    Math.abs(candidate - seconds) < Math.abs(best - seconds) ? candidate : best,
-  );
-  return nearest * 1000;
-}
+// device in the batch) any value other than a few exact milliseconds,
+// verified against server/utils/constants.js's DEVICE_POLL_FREQUENCIES
+// (1000, 2000, 10000, 15000, 30000, 60000). No longer user-configurable
+// (Keep It Simple - removed from gladys-assistant-integration.json's
+// config_schema), so this is just a literal picked from that fixed set,
+// Gladys's "every minute" tier.
+const DEVICE_POLL_FREQUENCY_MS = 60_000;
 
 /**
  * Translates one ConnectorState into Gladys feature states, scoped to
@@ -220,14 +219,21 @@ function observedConnectorIds(chargeState) {
     .sort((a, b) => a - b);
 }
 
-function buildChargerDevice(gladys, config, identity, chargeState) {
+function buildChargerDevice(gladys, identity, originCloudUrl, chargeState) {
   const ids = gladys.externalIds(DEVICE_TYPE, identity);
   const observed = observedConnectorIds(chargeState);
   const connectorIds = observed.length > 0 ? observed : [DEFAULT_CONNECTOR_ID];
   return {
     name: `EV charger ${identity}`,
     external_id: ids.device,
-    poll_frequency: toDevicePollFrequencyMs(config.poll_frequency),
+    poll_frequency: DEVICE_POLL_FREQUENCY_MS,
+    // Visible on the device's own card - Découverte before creation, then
+    // Appareils after - both render a device's `params` as a plain
+    // read-only table, silently kept in sync on every re-publish (no
+    // "Update" click needed, unlike a `features` structure change). This is
+    // the direct answer to "where can I see which cloud a charger is
+    // relaying to": right on that charger, not a list somewhere else.
+    params: [{ name: 'Origin cloud URL', value: originCloudUrl }],
     features: connectorIds.flatMap((connectorId) => buildConnectorFeatures(ids, connectorId)),
   };
 }
@@ -268,7 +274,7 @@ export const charger = {
     }
 
     return identities.map((identity) =>
-      buildChargerDevice(gladys, config, identity, allChargers?.[identity]),
+      buildChargerDevice(gladys, identity, config.chargers[identity], allChargers?.[identity]),
     );
   },
 

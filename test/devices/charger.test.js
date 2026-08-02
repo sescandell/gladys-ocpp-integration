@@ -99,8 +99,8 @@ test('ownsDevice: true for a charger device of this integration, false otherwise
   assert.equal(charger.ownsDevice(gladys, 'some-other-device:xyz'), false);
 });
 
-function configWithChargers(chargers, poll_frequency = 30) {
-  return normalizeConfig({ ...serializeChargersStore(chargers), poll_frequency });
+function configWithChargers(chargers) {
+  return normalizeConfig(serializeChargersStore(chargers));
 }
 
 const config = configWithChargers({ 'CP-1': 'wss://cloud.example.com/ocpp' });
@@ -133,35 +133,24 @@ test('buildDevices: a configured charge point that has never connected is still 
     devices.map((d) => d.external_id),
     ['ev-charger:CP-1'],
   );
-  assert.equal(devices[0].poll_frequency, 30_000);
+  // Fixed at Gladys's "every minute" tier - no longer user-configurable.
+  assert.equal(devices[0].poll_frequency, 60_000);
   assert.equal(devices[0].features.length, 7);
   assert.ok(devices[0].features.every((f) => f.external_id.endsWith(':1')));
 });
 
-test('buildDevices: poll_frequency is converted to milliseconds, snapped to a value Gladys accepts', async () => {
+test('buildDevices: poll_frequency is always the fixed 60s value Gladys accepts', async () => {
   const gladys = createFakeGladys();
-  const fetchState = async () => ({ chargers: {} });
+  const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
+  assert.equal(devices[0].poll_frequency, 60_000);
+});
 
-  for (const [configuredSeconds, expectedMs] of [
-    [1, 1000],
-    [2, 2000],
-    [10, 10_000],
-    [15, 15_000],
-    [30, 30_000],
-    [60, 60_000],
-    // Defensive snapping: a stray value (e.g. saved under an older, laxer
-    // version of the poll_frequency field) must never reach Gladys as-is -
-    // see toDevicePollFrequencyMs's doc comment.
-    [45, 30_000],
-    [3600, 60_000],
-  ]) {
-    const devices = await charger.buildDevices(
-      gladys,
-      configWithChargers({ 'CP-1': 'wss://cloud.example.com/ocpp' }, configuredSeconds),
-      fetchState,
-    );
-    assert.equal(devices[0].poll_frequency, expectedMs, `${configuredSeconds}s -> ${expectedMs}ms`);
-  }
+test('buildDevices: each device carries its configured origin cloud URL as a param', async () => {
+  const gladys = createFakeGladys();
+  const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
+  assert.deepEqual(devices[0].params, [
+    { name: 'Origin cloud URL', value: 'wss://cloud.example.com/ocpp' },
+  ]);
 });
 
 test('buildDevices: one device for the charge point, features for every physical connector, connector 0 excluded', async () => {
@@ -230,8 +219,14 @@ test('buildDevices: devices from TWO different configured charge points, no cros
   const deviceA = devices.find((d) => d.external_id === 'ev-charger:CP-VENDOR-A');
   assert.match(deviceA.name, /CP-VENDOR-A/);
   assert.equal(deviceA.features.length, 7);
+  assert.deepEqual(deviceA.params, [
+    { name: 'Origin cloud URL', value: 'wss://cloud-a.example.com/ocpp' },
+  ]);
   const deviceB = devices.find((d) => d.external_id === 'ev-charger:CP-VENDOR-B');
   assert.equal(deviceB.features.length, 14);
+  assert.deepEqual(deviceB.params, [
+    { name: 'Origin cloud URL', value: 'wss://cloud-b.example.com/ocpp' },
+  ]);
 });
 
 test('buildDevices: a configured charge point that has never connected is offered next to one that has', async () => {

@@ -58,26 +58,28 @@ proprement, donc l'ordre des étapes compte.
    cloud de ce fabricant — elle est invisible pour la borne elle-même. Dès
    que l'action se termine, la borne apparaît dans l'onglet **Découverte**,
    prête à être créée comme appareil — pas besoin qu'elle se soit déjà
-   connectée.
-4. Ouvrez le bloc de supervision de l'intégration pour trouver le **port
-   hôte** assigné par Gladys au port OCPP du sous-conteneur `gateway` (une
-   étiquette/lien "Ouvrir" à côté de l'entrée `gateway`, également rappelé
-   dans le message de statut de connexion). Ce port est **le même pour
-   toutes les bornes**.
+   connectée. Son URL de cloud d'origine configurée est affichée directement
+   sur sa fiche (puis, une fois créée, sur l'appareil lui-même) — c'est le
+   seul endroit pour la consulter, il n'existe aucune liste des bornes
+   configurées ailleurs.
+4. Ouvrez l'écran **Supervision** de l'intégration : le statut de connexion
+   affiche une URL OCPP prête à l'emploi, `ws://<adresse LAN de cet hôte
+Gladys>:<port>/` — le port est déjà rempli pour vous, il ne reste qu'à
+   remplacer le texte générique par l'adresse LAN réelle de cet hôte Gladys.
+   Cette URL est **la même pour toutes les bornes**.
 5. Dans l'application de la borne, faites pointer son URL de serveur OCPP
-   vers `ws://<adresse-LAN-de-cet-hôte-Gladys>:<port assigné>/` — adressage
-   OCPP standard (la borne s'identifie dans le chemin de l'URL, comme elle
-   l'a toujours fait).
+   vers cette adresse.
 6. Étant déjà configurée, la borne se connecte et commence à être relayée
    immédiatement — l'appareil créé à l'étape 3 commence à recevoir de
    vraies données.
-7. Répétez les étapes 2 à 6 pour chaque autre borne — même port, sa propre
+7. Répétez les étapes 2 à 6 pour chaque autre borne — même URL, sa propre
    identity, sa propre URL de cloud d'origine, même d'un fabricant
    différent.
 
 Pour corriger une erreur ou changer l'URL du cloud d'origine d'une borne,
-relancez l'action avec la même identity et l'URL corrigée. Pour retirer une
-borne, relancez l'action avec son identity et une URL **vide**.
+relancez l'action avec la même identity et l'URL corrigée (vérifiez d'abord
+son URL actuelle sur sa fiche appareil). Pour retirer une borne, relancez
+l'action avec son identity et une URL **vide**.
 
 Si une borne se connecte avant d'avoir été ajoutée ici (ou avec une identity
 différente de celle saisie), elle est rejetée et listée comme **détectée, en
