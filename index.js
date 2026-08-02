@@ -69,7 +69,7 @@ gladys.onConfigUpdated(async (newConfig) => {
 // independently of the config-form save flow, so it re-fetches the config
 // fresh to merge against the latest saved charger set rather than risking a
 // stale in-memory copy.
-gladys.onAction('add_charger', async ({ fields }) => {
+gladys.onAction('add_charger', async (fields) => {
   const identity = String(fields.identity ?? '').trim();
   if (!identity) {
     throw new Error('Charge point identity is required.');
