@@ -35,35 +35,47 @@ you ever want to stop using this integration for that charger.
 
 ## Setup
 
+Configure each charge point **before** pointing it at the relay. Most charge
+points won't complete a connection to a server that doesn't already know
+their identity — a first connection attempt against an unconfigured relay
+is typically rejected and not gracefully retried, so getting the order right
+matters.
+
 1. Install the integration — its relay starts automatically, no
    configuration needed yet.
-2. Open the integration's supervision block to find the **host port**
+2. Find the charge point's **identity** (sometimes called serial number or
+   charge point ID) in its vendor app or portal, or on a label on the
+   charger itself.
+3. Run the **"Add a charge point"** action (Configuration screen): paste the
+   identity, and the **origin cloud URL** exactly as shown by that charger's
+   vendor app — including any trailing query string some vendors use (e.g.
+   ending in `?sn=`). Any such quirk only concerns the relay's outbound
+   connection to that vendor's cloud — it is invisible to the charge point
+   itself.
+4. Open the integration's supervision block to find the **host port**
    assigned by Gladys for the `gateway` sub-container's OCPP port (an "Open"
    / port label next to the `gateway` entry, also echoed in the connection
    status message). This port is the **same for every charge point**.
-3. In a charge point's vendor app, point its OCPP server URL to
+5. In the charge point's vendor app, point its OCPP server URL to
    `ws://<this-Gladys-host's-LAN-address>:<assigned-port>/` — standard OCPP
    addressing (the charge point identifies itself in the URL path, the same
    way it always has).
-4. The charge point tries to connect, but the relay doesn't know where to
-   forward it yet: the connection status now lists it as **detected,
-   awaiting configuration**, with its identity (also visible in the
-   `gateway` sub-container's logs). Copy that identity.
-5. Run the **"Configure a detected charge point"** action (Configuration
-   screen): paste the identity, and the **origin cloud URL** exactly as
-   shown by that charger's vendor app — including any trailing query string
-   some vendors use (e.g. ending in `?sn=`). Any such quirk only concerns
-   the relay's outbound connection to that vendor's cloud — it is invisible
-   to the charge point itself.
-6. The charge point reconnects (it retries on its own) and starts relaying.
-   Go to the **Discovery** tab: once it has sent its first status updates,
-   its connector(s) appear there, ready to be added as devices.
-7. Repeat steps 3-6 for every other charge point — same port, its own
+6. Since it is already configured, the charge point connects and starts
+   relaying right away. Go to the **Discovery** tab: once it has sent its
+   first status updates, its connector(s) appear there, ready to be added as
+   devices.
+7. Repeat steps 2-6 for every other charge point — same port, its own
    identity, its own origin cloud URL, even a different vendor.
 
 To fix a mistake or change a charge point's origin cloud URL, run the action
 again with the same identity and the corrected URL. To remove a charge
 point, run the action with its identity and an **empty** URL.
+
+If a charge point connects before you've added it here (or with an identity
+that doesn't match what you typed), it is rejected and listed as **detected,
+awaiting configuration** in the connection status, with the exact identity
+it announced — a useful way to catch a typo, but not the intended flow: add
+it first, then point it at the relay.
 
 ## Multiple connectors
 

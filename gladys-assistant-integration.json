@@ -22,8 +22,8 @@
         "fr": "Fonctionnement"
       },
       "description": {
-        "en": "This integration runs its own OCPP relay in a companion container, started automatically. Point any number of charge points at the port Gladys assigns below (same port for all) instead of the vendor's cloud - the relay forwards everything to the right cloud so nothing breaks. A charge point that connects without being configured yet shows up as \"detected, awaiting configuration\" in the status below and in the gateway's logs: use the \"Configure a detected charge point\" action to give it its own origin cloud URL. Exposing this port makes the relay reachable on your LAN - read the documentation before installing.",
-        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur, demarre automatiquement. Pointez autant de bornes que necessaire vers le port assigne par Gladys ci-dessous (le meme port pour toutes) a la place du cloud du fabricant - le relais transmet tout vers le bon cloud pour ne rien casser. Une borne qui se connecte sans etre encore configuree apparait comme \"detectee, en attente de configuration\" dans le statut ci-dessous et dans les logs du relais : utilisez l'action \"Configurer une borne detectee\" pour lui assigner son URL de cloud d'origine. Cela rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
+        "en": "This integration runs its own OCPP relay in a companion container, started automatically. Most charge points refuse to connect to a server that doesn't already know their identity, so configure each one FIRST: run the \"Add a charge point\" action below with its identity (check the vendor app, or a label on the charger) and its origin cloud URL, THEN point the charge point at the port Gladys assigns below (same port for every charge point) - the relay forwards everything to the right cloud so nothing breaks. A charge point that connects before being added shows up as \"detected, awaiting configuration\" below with the identity it announced - useful to catch a typo, not the intended flow. Exposing this port makes the relay reachable on your LAN - read the documentation before installing.",
+        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur, demarre automatiquement. La plupart des bornes refusent de se connecter a un serveur qui ne connait pas deja leur identity : configurez donc chaque borne D'ABORD - lancez l'action \"Ajouter une borne\" ci-dessous avec son identity (visible dans l'application du fabricant, ou sur une etiquette de la borne) et son URL de cloud d'origine, PUIS faites pointer la borne vers le port assigne par Gladys ci-dessous (le meme port pour toutes). Une borne qui se connecte avant d'etre ajoutee apparait comme \"detectee, en attente de configuration\" ci-dessous avec l'identity qu'elle a annoncee - utile pour reperer une erreur de saisie, mais ce n'est pas le fonctionnement prevu. Cela rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
       }
     },
     {
@@ -47,12 +47,12 @@
     {
       "key": "add_charger",
       "label": {
-        "en": "Configure a detected charge point",
-        "fr": "Configurer une borne detectee"
+        "en": "Add a charge point",
+        "fr": "Ajouter une borne"
       },
       "description": {
-        "en": "Assign an origin cloud URL to a charge point identity (find it in the connection status below, or in the gateway's logs, once the charge point has tried to connect at least once). Leave the URL empty to remove a previously configured charge point.",
-        "fr": "Associe une URL de cloud d'origine a l'identity d'une borne (visible dans le statut de connexion ci-dessous, ou dans les logs du relais, une fois que la borne a tente de se connecter au moins une fois). Laissez l'URL vide pour retirer une borne deja configuree."
+        "en": "Add a charge point by its identity (check the vendor app, or a label on the charger) and its origin cloud URL - do this BEFORE pointing the charge point at the relay's port: most charge points won't complete a connection to a server that doesn't already know their identity. Leave the URL empty to remove a previously configured charge point.",
+        "fr": "Ajoutez une borne via son identity (visible dans l'application du fabricant, ou sur une etiquette de la borne) et son URL de cloud d'origine - faites-le AVANT de faire pointer la borne vers le port du relais : la plupart des bornes ne terminent pas la connexion vers un serveur qui ne connait pas deja leur identity. Laissez l'URL vide pour retirer une borne deja configuree."
       },
       "timeout_seconds": 15,
       "fields": [

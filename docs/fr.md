@@ -39,39 +39,50 @@ cette intégration.
 
 ## Installation
 
+Configurez chaque borne **avant** de la faire pointer vers le relais. La
+plupart des bornes ne terminent pas leur connexion vers un serveur qui ne
+connaît pas déjà leur identity — une première tentative de connexion contre
+un relais non configuré est généralement rejetée et pas réessayée
+proprement, donc l'ordre des étapes compte.
+
 1. Installez l'intégration — son relais démarre automatiquement, aucune
    configuration n'est nécessaire pour l'instant.
-2. Ouvrez le bloc de supervision de l'intégration pour trouver le **port
+2. Trouvez l'**identity** de la borne (parfois appelée numéro de série ou
+   identifiant de la borne) dans son application ou son portail fabricant,
+   ou sur une étiquette de la borne elle-même.
+3. Lancez l'action **"Ajouter une borne"** (écran Configuration) : collez
+   l'identity, et l'**URL du cloud d'origine** telle qu'affichée par
+   l'application de cette borne — y compris une éventuelle chaîne de requête
+   finale que certains fabricants utilisent (ex. se terminant par `?sn=`).
+   Une telle astuce ne concerne que la connexion sortante du relais vers le
+   cloud de ce fabricant — elle est invisible pour la borne elle-même.
+4. Ouvrez le bloc de supervision de l'intégration pour trouver le **port
    hôte** assigné par Gladys au port OCPP du sous-conteneur `gateway` (une
    étiquette/lien "Ouvrir" à côté de l'entrée `gateway`, également rappelé
    dans le message de statut de connexion). Ce port est **le même pour
    toutes les bornes**.
-3. Dans l'application d'une borne, faites pointer son URL de serveur OCPP
+5. Dans l'application de la borne, faites pointer son URL de serveur OCPP
    vers `ws://<adresse-LAN-de-cet-hôte-Gladys>:<port assigné>/` — adressage
    OCPP standard (la borne s'identifie dans le chemin de l'URL, comme elle
    l'a toujours fait).
-4. La borne tente de se connecter, mais le relais ne sait pas encore où la
-   relayer : le statut de connexion la liste alors comme **détectée, en
-   attente de configuration**, avec son identity (également visible dans
-   les logs du sous-conteneur `gateway`). Copiez cette identity.
-5. Lancez l'action **"Configurer une borne détectée"** (écran
-   Configuration) : collez l'identity, et l'**URL du cloud d'origine**
-   telle qu'affichée par l'application de cette borne — y compris une
-   éventuelle chaîne de requête finale que certains fabricants utilisent
-   (ex. se terminant par `?sn=`). Une telle astuce ne concerne que la
-   connexion sortante du relais vers le cloud de ce fabricant — elle est
-   invisible pour la borne elle-même.
-6. La borne se reconnecte (elle réessaie de elle-même) et le relais commence
-   à fonctionner. Rendez-vous dans l'onglet **Découverte** : une fois
+6. Étant déjà configurée, la borne se connecte et commence à être relayée
+   immédiatement. Rendez-vous dans l'onglet **Découverte** : une fois
    qu'elle a envoyé ses premiers statuts, son ou ses connecteurs y
    apparaissent, prêts à être ajoutés comme appareils.
-7. Répétez les étapes 3 à 6 pour chaque autre borne — même port, sa propre
+7. Répétez les étapes 2 à 6 pour chaque autre borne — même port, sa propre
    identity, sa propre URL de cloud d'origine, même d'un fabricant
    différent.
 
 Pour corriger une erreur ou changer l'URL du cloud d'origine d'une borne,
 relancez l'action avec la même identity et l'URL corrigée. Pour retirer une
 borne, relancez l'action avec son identity et une URL **vide**.
+
+Si une borne se connecte avant d'avoir été ajoutée ici (ou avec une identity
+différente de celle saisie), elle est rejetée et listée comme **détectée, en
+attente de configuration** dans le statut de connexion, avec l'identity
+exacte qu'elle a annoncée — utile pour repérer une erreur de saisie, mais ce
+n'est pas le fonctionnement prévu : ajoutez-la d'abord, puis faites-la
+pointer vers le relais.
 
 ## Connecteurs multiples
 

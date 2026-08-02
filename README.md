@@ -82,6 +82,17 @@ points as you want", so the set lives in free internal config storage
 sub-container (`POST /api/chargers`, see `gateway/src/chargerRegistry.ts`) -
 no container restart needed to add, update, or remove one.
 
+Charge points must be added **before** being pointed at the relay, not
+after: most CSMS/charge point implementations refuse (or don't gracefully
+retry) a first connection against a server that doesn't already recognize
+their identity, so the intended flow is declare-first — the user already
+knows each identity from the vendor app or a label on the charger, see
+`docs/en.md`/`docs/fr.md`. A charge point that connects with an identity the
+registry doesn't know yet is recorded as **pending** and closed cleanly
+(nothing to relay it to); its identity is surfaced in the integration's
+connection status message purely as a diagnostic aid (catching a typo), not
+as the primary discovery mechanism.
+
 A charge point can also have several physical connectors. Rather than
 assuming a fixed count, `src/devices/charger.js`'s `buildDevices()` asks the
 gateway sub-container what it has actually observed (`StatusNotification`)
@@ -91,12 +102,6 @@ aggregate charge point, is always excluded). The set naturally grows as new
 charge points are configured and new connectors report in; Gladys's
 discovery model handles this cleanly since `publishDiscoveredDevices`
 replaces the whole offered list on every call, not just the delta.
-
-A charge point connecting with an identity the registry doesn't know yet is
-recorded as **pending** and closed cleanly (nothing to relay it to) - its
-identity is surfaced in the integration's connection status message so the
-user can copy it into the `add_charger` action without hunting for a serial
-number on a sticker.
 
 ## Generic origin-cloud identity addressing
 
