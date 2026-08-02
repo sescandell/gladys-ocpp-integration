@@ -1,0 +1,9 @@
+# Normalize line endings to LF for every text file, regardless of the
+# platform/editor/core.autocrlf setting used to check it out - this repo is
+# built and tested on both Windows (dev) and Linux (CI/Docker images), and
+# without this, Windows checkouts constantly show every file as "modified"
+# in `git status` for no real content change.
+* text=auto eol=lf
+
+# Binary assets: never touch, never diff as text.
+*.png binary
