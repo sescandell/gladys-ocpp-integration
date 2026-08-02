@@ -143,6 +143,17 @@ function buildConnectorFeatures(ids, connectorId) {
       external_id: ids.feature(`${FEATURE.STATUS}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.TEXT,
       type: DEVICE_FEATURE_TYPES.TEXT.TEXT,
+      // Gladys core requires min/max on EVERY feature regardless of
+      // category (t_device_feature.min/max are NOT NULL at the DB layer,
+      // server/models/device_feature.js) - meaningless for a text value
+      // (it publishes to last_value_string, not the numeric last_value
+      // these bound), but still mandatory. Caught for real: device
+      // creation 422s with "min/max cannot be null" the moment the user
+      // clicks "Add to Gladys", since neither the SDK nor
+      // publishDiscoveredDevices validate this - only the actual create
+      // endpoint's DB insert does.
+      min: 0,
+      max: 0,
       read_only: true,
       has_feedback: false,
       keep_history: true,
@@ -152,6 +163,8 @@ function buildConnectorFeatures(ids, connectorId) {
       external_id: ids.feature(`${FEATURE.PLUGGED}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
       type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.PLUGGED,
+      min: 0,
+      max: 1,
       read_only: true,
       has_feedback: false,
       keep_history: true,
@@ -161,6 +174,8 @@ function buildConnectorFeatures(ids, connectorId) {
       external_id: ids.feature(`${FEATURE.CHARGING}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
       type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_ON,
+      min: 0,
+      max: 1,
       read_only: true,
       has_feedback: false,
       keep_history: true,
@@ -172,6 +187,7 @@ function buildConnectorFeatures(ids, connectorId) {
       type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_POWER,
       unit: DEVICE_FEATURE_UNITS.KILOWATT,
       min: 0,
+      max: 1000, // 1 MW headroom - generous even for ultra-fast DC charging
       read_only: true,
       has_feedback: false,
       keep_history: true,
@@ -183,6 +199,7 @@ function buildConnectorFeatures(ids, connectorId) {
       type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_CURRENT,
       unit: DEVICE_FEATURE_UNITS.AMPERE,
       min: 0,
+      max: 1000,
       read_only: true,
       has_feedback: false,
       keep_history: true,
@@ -194,6 +211,7 @@ function buildConnectorFeatures(ids, connectorId) {
       type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_VOLTAGE,
       unit: DEVICE_FEATURE_UNITS.VOLT,
       min: 0,
+      max: 1000, // covers DC fast-charging voltages, well above any AC use
       read_only: true,
       has_feedback: false,
       keep_history: true,
@@ -205,6 +223,7 @@ function buildConnectorFeatures(ids, connectorId) {
       type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_ENERGY_ADDED_TOTAL,
       unit: DEVICE_FEATURE_UNITS.KILOWATT_HOUR,
       min: 0,
+      max: 1_000_000, // lifetime totalizer, never resets - needs real headroom
       read_only: true,
       has_feedback: false,
       keep_history: true,

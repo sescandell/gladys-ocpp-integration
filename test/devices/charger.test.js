@@ -139,6 +139,22 @@ test('buildDevices: a configured charge point that has never connected is still 
   assert.ok(devices[0].features.every((f) => f.external_id.endsWith(':1')));
 });
 
+test('buildDevices: every feature declares both min and max (Gladys core requires both, for every category)', async () => {
+  // Regression test: Gladys core's t_device_feature.min/max are NOT NULL
+  // regardless of feature category (server/models/device_feature.js) - a
+  // feature missing either one passes discovery fine (neither the SDK nor
+  // publishDiscoveredDevices validate this) but 422s the moment the user
+  // actually clicks "Add to Gladys" ("min/max cannot be null"), since only
+  // the real device-creation DB insert enforces it.
+  const gladys = createFakeGladys();
+  const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
+  assert.equal(devices[0].features.length, 7);
+  for (const feature of devices[0].features) {
+    assert.equal(typeof feature.min, 'number', `${feature.name} must declare a numeric min`);
+    assert.equal(typeof feature.max, 'number', `${feature.name} must declare a numeric max`);
+  }
+});
+
 test('buildDevices: poll_frequency is always the fixed 60s value Gladys accepts', async () => {
   const gladys = createFakeGladys();
   const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
