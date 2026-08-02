@@ -50,7 +50,7 @@ Charge point A ─┐                     Charge point B ─┐
 │  ├─ gatewayClient.js               # HTTP client for the "gateway" sub-container (state, live map sync)
 │  └─ devices/
 │     ├─ index.js                    #   registry (single blueprint, see below)
-│     └─ charger.js                  #   one device per (configured charge point x connector)
+│     └─ charger.js                  #   one device per configured charge point (connectors are features)
 ├─ gateway/                          # standalone sub-project: the OCPP relay sub-container
 │  ├─ src/
 │  │  ├─ gateway.ts                  #   RPCServer (charge points) <-> RPCClient (each origin cloud)
@@ -72,7 +72,7 @@ Charge point A ─┐                     Charge point B ─┐
 └─ cover.png                         # catalog cover, 800×534 px, ≤150 KB
 ```
 
-## Dynamic multi-charger, multi-connector discovery
+## Dynamic multi-charger discovery, one device per charge point
 
 Any number of charge points can be configured, one at a time, via the
 `add_charger` manifest action (identity + origin cloud URL) — `config_schema`
@@ -93,15 +93,21 @@ registry doesn't know yet is recorded as **pending** and closed cleanly
 connection status message purely as a diagnostic aid (catching a typo), not
 as the primary discovery mechanism.
 
-A charge point can also have several physical connectors. Rather than
-assuming a fixed count, `src/devices/charger.js`'s `buildDevices()` asks the
-gateway sub-container what it has actually observed (`StatusNotification`)
-per configured charge point since it last started, and offers one Gladys
-device per (charge point × connector) pair (OCPP connector `0`, the
-aggregate charge point, is always excluded). The set naturally grows as new
-charge points are configured and new connectors report in; Gladys's
-discovery model handles this cleanly since `publishDiscoveredDevices`
-replaces the whole offered list on every call, not just the delta.
+`src/devices/charger.js`'s `buildDevices()` offers ONE Gladys device per
+configured charge point (`config.chargers`), as soon as it is configured -
+it does not need to have connected yet. This matches the SDK's own
+discovery contract ("your integration never creates or deletes devices, it
+publishes the devices it discovers, and the user decides which ones to
+create" - the official dev docs), the same pattern a cloud/account-based
+integration uses to list devices from its own registry, online or not. A
+charge point can have several physical connectors: each one is a small
+group of features on that SAME device (`Connector <n> - <label>`, OCPP
+connector `0` - the aggregate charge point - is always excluded), seeded
+with connector 1 by default (the OCPP-conventional first, and for most real
+hardware only, connector) until the gateway actually observes more via
+`StatusNotification`. Growing the feature list of an already-created device
+surfaces as an "Update" button in Gladys - the user stays in control of
+structural changes.
 
 ## Generic origin-cloud identity addressing
 

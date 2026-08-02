@@ -51,7 +51,9 @@ matters.
    vendor app — including any trailing query string some vendors use (e.g.
    ending in `?sn=`). Any such quirk only concerns the relay's outbound
    connection to that vendor's cloud — it is invisible to the charge point
-   itself.
+   itself. As soon as the action completes, the charge point shows up in the
+   **Discovery** tab, ready to be created as a device — it does not need to
+   have connected yet.
 4. Open the integration's supervision block to find the **host port**
    assigned by Gladys for the `gateway` sub-container's OCPP port (an "Open"
    / port label next to the `gateway` entry, also echoed in the connection
@@ -61,9 +63,8 @@ matters.
    addressing (the charge point identifies itself in the URL path, the same
    way it always has).
 6. Since it is already configured, the charge point connects and starts
-   relaying right away. Go to the **Discovery** tab: once it has sent its
-   first status updates, its connector(s) appear there, ready to be added as
-   devices.
+   relaying right away — the device created in step 3 starts reporting real
+   data.
 7. Repeat steps 2-6 for every other charge point — same port, its own
    identity, its own origin cloud URL, even a different vendor.
 
@@ -79,10 +80,16 @@ it first, then point it at the relay.
 
 ## Multiple connectors
 
-If a charge point has more than one physical connector, each one becomes its
-own device in Gladys as soon as it has reported its status at least once. If
-a connector doesn't appear yet, try **Rescan** from the Discovery tab after
-using that connector.
+A charge point is one device in Gladys, whatever its number of physical
+connectors. It starts with one connector's worth of features (status,
+plugged, charging, power, current, voltage, energy); if it has more than
+one physical connector, the extra ones appear as additional features
+("Connector 2 - ...", etc.) once the gateway has actually seen them report
+their status at least once. If you've already created the device, Gladys
+shows an **Update** button once new connectors are picked up — nothing is
+added silently to a device you already created. If a connector doesn't
+appear yet, try **Rescan** from the Discovery tab after using that
+connector.
 
 ## Security note
 

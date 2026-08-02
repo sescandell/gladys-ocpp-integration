@@ -55,7 +55,10 @@ proprement, donc l'ordre des étapes compte.
    l'application de cette borne — y compris une éventuelle chaîne de requête
    finale que certains fabricants utilisent (ex. se terminant par `?sn=`).
    Une telle astuce ne concerne que la connexion sortante du relais vers le
-   cloud de ce fabricant — elle est invisible pour la borne elle-même.
+   cloud de ce fabricant — elle est invisible pour la borne elle-même. Dès
+   que l'action se termine, la borne apparaît dans l'onglet **Découverte**,
+   prête à être créée comme appareil — pas besoin qu'elle se soit déjà
+   connectée.
 4. Ouvrez le bloc de supervision de l'intégration pour trouver le **port
    hôte** assigné par Gladys au port OCPP du sous-conteneur `gateway` (une
    étiquette/lien "Ouvrir" à côté de l'entrée `gateway`, également rappelé
@@ -66,9 +69,8 @@ proprement, donc l'ordre des étapes compte.
    OCPP standard (la borne s'identifie dans le chemin de l'URL, comme elle
    l'a toujours fait).
 6. Étant déjà configurée, la borne se connecte et commence à être relayée
-   immédiatement. Rendez-vous dans l'onglet **Découverte** : une fois
-   qu'elle a envoyé ses premiers statuts, son ou ses connecteurs y
-   apparaissent, prêts à être ajoutés comme appareils.
+   immédiatement — l'appareil créé à l'étape 3 commence à recevoir de
+   vraies données.
 7. Répétez les étapes 2 à 6 pour chaque autre borne — même port, sa propre
    identity, sa propre URL de cloud d'origine, même d'un fabricant
    différent.
@@ -86,10 +88,17 @@ pointer vers le relais.
 
 ## Connecteurs multiples
 
-Si une borne possède plusieurs connecteurs physiques, chacun devient son
-propre appareil dans Gladys dès qu'il a rapporté son statut au moins une
-fois. Si un connecteur n'apparaît pas encore, essayez **Relancer un scan**
-depuis l'onglet Découverte après avoir utilisé ce connecteur.
+Une borne est un seul appareil dans Gladys, quel que soit son nombre de
+connecteurs physiques. Elle démarre avec les fonctionnalités d'un seul
+connecteur (statut, branchée, en charge, puissance, courant, tension,
+énergie) ; si elle possède plusieurs connecteurs physiques, les
+supplémentaires apparaissent comme fonctionnalités additionnelles
+("Connecteur 2 - ...", etc.) une fois que le relais les a réellement vus
+rapporter leur statut au moins une fois. Si vous avez déjà créé l'appareil,
+Gladys affiche un bouton **Mettre à jour** dès que de nouveaux connecteurs
+sont détectés — rien n'est ajouté silencieusement à un appareil déjà créé.
+Si un connecteur n'apparaît pas encore, essayez **Relancer un scan** depuis
+l'onglet Découverte après avoir utilisé ce connecteur.
 
 ## Note de sécurité
 
