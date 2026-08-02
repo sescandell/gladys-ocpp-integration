@@ -6,11 +6,13 @@
     "en": "Read-only supervision of OCPP 1.6 EV chargers, each relayed to its own charger cloud.",
     "fr": "Supervision en lecture seule de bornes OCPP 1.6, chacune relayee vers son propre cloud d'origine."
   },
-  "version": "0.3.1",
-  "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.3.1",
+  "version": "0.3.2",
+  "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.3.2",
   "gladys_version": ">=4.84.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
-  "transports": ["local"],
+  "transports": [
+    "local"
+  ],
   "config_schema": [
     {
       "key": "intro",
@@ -78,7 +80,7 @@
   "containers": [
     {
       "name": "gateway",
-      "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration-gateway:0.3.1",
+      "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration-gateway:0.3.2",
       "start": "auto",
       "ports": [
         {
