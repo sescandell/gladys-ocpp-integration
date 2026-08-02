@@ -133,9 +133,35 @@ test('buildDevices: a configured charge point that has never connected is still 
     devices.map((d) => d.external_id),
     ['ev-charger:CP-1'],
   );
-  assert.equal(devices[0].poll_frequency, 30);
+  assert.equal(devices[0].poll_frequency, 30_000);
   assert.equal(devices[0].features.length, 7);
   assert.ok(devices[0].features.every((f) => f.external_id.endsWith(':1')));
+});
+
+test('buildDevices: poll_frequency is converted to milliseconds, snapped to a value Gladys accepts', async () => {
+  const gladys = createFakeGladys();
+  const fetchState = async () => ({ chargers: {} });
+
+  for (const [configuredSeconds, expectedMs] of [
+    [1, 1000],
+    [2, 2000],
+    [10, 10_000],
+    [15, 15_000],
+    [30, 30_000],
+    [60, 60_000],
+    // Defensive snapping: a stray value (e.g. saved under an older, laxer
+    // version of the poll_frequency field) must never reach Gladys as-is -
+    // see toDevicePollFrequencyMs's doc comment.
+    [45, 30_000],
+    [3600, 60_000],
+  ]) {
+    const devices = await charger.buildDevices(
+      gladys,
+      configWithChargers({ 'CP-1': 'wss://cloud.example.com/ocpp' }, configuredSeconds),
+      fetchState,
+    );
+    assert.equal(devices[0].poll_frequency, expectedMs, `${configuredSeconds}s -> ${expectedMs}ms`);
+  }
 });
 
 test('buildDevices: one device for the charge point, features for every physical connector, connector 0 excluded', async () => {

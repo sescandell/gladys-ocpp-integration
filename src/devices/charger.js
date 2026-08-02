@@ -73,6 +73,24 @@ const AGGREGATE_CONNECTOR_ID = 0;
 // hardware, only) connector.
 const DEFAULT_CONNECTOR_ID = 1;
 
+// A discovered device's poll_frequency is NOT a free number: Gladys core
+// rejects (and fails the ENTIRE publishDiscoveredDevices call, for every
+// device in the batch) any value other than these exact milliseconds,
+// verified against server/utils/constants.js's DEVICE_POLL_FREQUENCIES.
+// The manifest's poll_frequency config field is a matching `select` (values
+// in seconds, see gladys-assistant-integration.json) precisely so this list
+// stays in sync - but snapping defensively here means a stale config value
+// saved under an older, laxer version of that field can never reproduce the
+// same failure again.
+const DEVICE_POLL_FREQUENCIES_SECONDS = [1, 2, 10, 15, 30, 60];
+
+function toDevicePollFrequencyMs(seconds) {
+  const nearest = DEVICE_POLL_FREQUENCIES_SECONDS.reduce((best, candidate) =>
+    Math.abs(candidate - seconds) < Math.abs(best - seconds) ? candidate : best,
+  );
+  return nearest * 1000;
+}
+
 /**
  * Translates one ConnectorState into Gladys feature states, scoped to
  * `connectorId` (a device carries one such group of features PER physical
@@ -209,7 +227,7 @@ function buildChargerDevice(gladys, config, identity, chargeState) {
   return {
     name: `EV charger ${identity}`,
     external_id: ids.device,
-    poll_frequency: config.poll_frequency,
+    poll_frequency: toDevicePollFrequencyMs(config.poll_frequency),
     features: connectorIds.flatMap((connectorId) => buildConnectorFeatures(ids, connectorId)),
   };
 }

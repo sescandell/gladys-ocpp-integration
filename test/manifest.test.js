@@ -40,13 +40,18 @@ test('V1 is read-only: the only action manages charge point configuration, never
 
 test('config_schema defaults stay consistent with DEFAULT_CONFIG', () => {
   for (const field of manifest.config_schema) {
-    if (field.default !== undefined) {
-      assert.equal(
-        DEFAULT_CONFIG[field.key],
-        field.default,
-        `DEFAULT_CONFIG.${field.key} must match the manifest default`,
-      );
-    }
+    if (field.default === undefined) continue;
+    // select/multi_select option values are always strings (manifest schema
+    // constraint), even when DEFAULT_CONFIG stores the coerced runtime type
+    // (poll_frequency is a number of seconds, used in arithmetic - see
+    // src/devices/charger.js's toDevicePollFrequencyMs).
+    const expected =
+      field.type === 'select' ? String(DEFAULT_CONFIG[field.key]) : DEFAULT_CONFIG[field.key];
+    assert.equal(
+      expected,
+      field.default,
+      `DEFAULT_CONFIG.${field.key} must match the manifest default`,
+    );
   }
 });
 
@@ -128,4 +133,24 @@ test('no known hardware brand reference anywhere in the manifest', () => {
   // Regression trip-wire: this integration must stay generic, never tied to
   // a specific charge point vendor.
   assert.doesNotMatch(manifestRaw, /autel/i);
+});
+
+test('poll_frequency only offers the exact intervals Gladys accepts for a device poll_frequency', () => {
+  // Regression trip-wire: a discovered device's poll_frequency must be one
+  // of Gladys core's DEVICE_POLL_FREQUENCIES (server/utils/constants.js),
+  // in MILLISECONDS - {1,2,10,15,30,60} seconds here. A free-form number
+  // field (the original design) let the user pick a value outside that set
+  // (e.g. the default `30` was fine, but nothing stopped a wider one),
+  // which fails the ENTIRE publishDiscoveredDevices call, for every charge
+  // point at once, with a cryptic "invalid poll frequency" - caught for
+  // real running the "Add a charge point" action. This field must always
+  // stay a `select` restricted to that exact set; see also
+  // src/devices/charger.js's toDevicePollFrequencyMs, the defensive second
+  // layer that snaps any stray value before it reaches Gladys.
+  const field = manifest.config_schema.find((f) => f.key === 'poll_frequency');
+  assert.equal(field.type, 'select', 'poll_frequency must be a select, not a free number field');
+  assert.deepEqual(
+    field.options.map((o) => o.value).sort((a, b) => Number(a) - Number(b)),
+    ['1', '2', '10', '15', '30', '60'],
+  );
 });
