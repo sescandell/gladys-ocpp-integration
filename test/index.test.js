@@ -42,7 +42,41 @@ function startFakeGatewayServer() {
   return server;
 }
 
-async function setup(t, options = {}) {
+// A gateway that fails its first `failCount` POST /api/chargers requests
+// (503, simulating "the sub-container is running per Docker but its Node
+// process hasn't bound its HTTP server yet" - see index.js's
+// withGatewayRetries doc comment), then succeeds. `failCount: Infinity`
+// never recovers.
+function startFlakyGatewayServer(failCount) {
+  let attempts = 0;
+  const server = createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/api/state') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ chargers: {}, pending: [] }));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/chargers') {
+      attempts += 1;
+      if (attempts <= failCount) {
+        res.writeHead(503);
+        res.end();
+        return;
+      }
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, configuredCount: 0 }));
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  return { server, getAttempts: () => attempts };
+}
+
+async function setup(t, fakeGladysOptions = {}, registerOptions = {}) {
   const server = startFakeGatewayServer();
   await new Promise((resolve) => server.listen(0, resolve));
   t.after(() => server.close());
@@ -56,9 +90,9 @@ async function setup(t, options = {}) {
         ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
       },
     ],
-    ...options,
+    ...fakeGladysOptions,
   });
-  registerHandlers(gladys, { gatewayBaseUrl: `http://127.0.0.1:${port}` });
+  registerHandlers(gladys, { gatewayBaseUrl: `http://127.0.0.1:${port}`, ...registerOptions });
   return gladys;
 }
 
@@ -117,4 +151,58 @@ test("connected event: called with no arguments (the real SDK shape), doesn't th
   assert.ok(typeof connectedHandler === 'function', 'a "connected" listener must be registered');
   await connectedHandler();
   assert.ok(gladys.connectionStatuses.length > 0);
+});
+
+test('reconcileGateway (via "connected"): retries the gateway sync and recovers if it comes up in time', async (t) => {
+  const { server, getAttempts } = startFlakyGatewayServer(2); // fails twice, succeeds on the 3rd
+  await new Promise((resolve) => server.listen(0, resolve));
+  t.after(() => server.close());
+  const { port } = server.address();
+
+  const gladys = createFakeGladys({
+    containers: [
+      {
+        name: GATEWAY_SUB_CONTAINER_NAME,
+        status: 'running',
+        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
+      },
+    ],
+  });
+  registerHandlers(gladys, {
+    gatewayBaseUrl: `http://127.0.0.1:${port}`,
+    gatewayRetry: { attempts: 5, delayMs: 1 },
+  });
+
+  await gladys.handlers.events['connected']();
+
+  assert.equal(getAttempts(), 3);
+  assert.equal(gladys.connectionStatuses.at(-1).connected, true);
+});
+
+test('reconcileGateway (via "connected"): reports disconnected once retries are exhausted', async (t) => {
+  const { server, getAttempts } = startFlakyGatewayServer(Infinity); // never recovers
+  await new Promise((resolve) => server.listen(0, resolve));
+  t.after(() => server.close());
+  const { port } = server.address();
+
+  const gladys = createFakeGladys({
+    containers: [
+      {
+        name: GATEWAY_SUB_CONTAINER_NAME,
+        status: 'running',
+        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
+      },
+    ],
+  });
+  registerHandlers(gladys, {
+    gatewayBaseUrl: `http://127.0.0.1:${port}`,
+    gatewayRetry: { attempts: 3, delayMs: 1 },
+  });
+
+  await gladys.handlers.events['connected']();
+
+  assert.equal(getAttempts(), 3);
+  const lastStatus = gladys.connectionStatuses.at(-1);
+  assert.equal(lastStatus.connected, false);
+  assert.match(lastStatus.message.en, /unable to start the gateway/i);
 });

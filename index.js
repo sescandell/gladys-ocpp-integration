@@ -46,17 +46,51 @@ import { ensureGatewayRunning, syncChargerMap, fetchGatewayState } from './src/g
  * `callback({ fields })` - a wrong destructure here crashed on
  * `fields.identity` the moment the action ran for real.
  * @param {import('@gladysassistant/integration-sdk').GladysIntegration} gladys
- * @param {{gatewayBaseUrl?: string}} [options] `gatewayBaseUrl` overrides the
- *   gateway sub-container's fixed internal URL - test-only (see
- *   test/index.test.js): hitting the real one from a dev machine takes
- *   several real seconds to fail (DNS), against a local fake server it's
- *   instant. Production never passes this, so it always uses the real
- *   internal DNS alias (see gatewayClient.js).
+ * @param {{gatewayBaseUrl?: string, gatewayRetry?: {attempts?: number, delayMs?: number}}} [options]
+ *   `gatewayBaseUrl` overrides the gateway sub-container's fixed internal
+ *   URL - test-only (see test/index.test.js): hitting the real one from a
+ *   dev machine takes several real seconds to fail (DNS), against a local
+ *   fake server it's instant. Production never passes this, so it always
+ *   uses the real internal DNS alias (see gatewayClient.js). `gatewayRetry`
+ *   overrides the retry schedule around the gateway's own HTTP API (see
+ *   `withGatewayRetries` below) - test-only, to keep retry tests fast.
  */
-export function registerHandlers(gladys, { gatewayBaseUrl } = {}) {
+export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } = {}) {
+  const gatewayRetryAttempts = gatewayRetry.attempts ?? 5;
+  const gatewayRetryDelayMs = gatewayRetry.delayMs ?? 500;
+
   // Current configuration (hot-reloaded via onConfigUpdated and after every
   // add_charger action).
   let config = normalizeConfig();
+
+  /**
+   * A few short retries around a call that reaches the gateway sub-
+   * container's OWN HTTP API (unlike `ensureGatewayRunning`, which only
+   * talks to the Gladys host API about container status). Real-world
+   * observation: even with `start: "auto"` (the supervisor starts the
+   * sub-container before this one boots), Docker reporting it "running"
+   * does not mean its Node process has finished starting up and bound its
+   * HTTP server yet - a benign race that showed up as an immediate
+   * ECONNREFUSED right after connecting to Gladys, and would otherwise
+   * leave the connection status stuck on "unable to start the gateway"
+   * until something else happened to re-run reconcileGateway (a config
+   * save, an add_charger action, a reconnect) - nothing self-heals it on
+   * its own.
+   */
+  async function withGatewayRetries(fn) {
+    let lastErr;
+    for (let attempt = 0; attempt < gatewayRetryAttempts; attempt += 1) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        if (attempt < gatewayRetryAttempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, gatewayRetryDelayMs));
+        }
+      }
+    }
+    throw lastErr;
+  }
 
   /**
    * Ensures the gateway sub-container is running, pushes the current set of
@@ -70,7 +104,7 @@ export function registerHandlers(gladys, { gatewayBaseUrl } = {}) {
   async function reconcileGateway() {
     try {
       const { hostPort } = await ensureGatewayRunning(gladys);
-      await syncChargerMap(config.chargers, gatewayBaseUrl);
+      await withGatewayRetries(() => syncChargerMap(config.chargers, gatewayBaseUrl));
 
       const configuredCount = Object.keys(config.chargers).length;
       let pendingIdentities = [];
