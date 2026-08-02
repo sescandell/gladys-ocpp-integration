@@ -1,16 +1,23 @@
 // -----------------------------------------------------------------------------
 // Minimal in-memory stand-in for the Gladys SDK object, for unit tests.
 //
-// It reproduces the only surface the device modules rely on:
-//   - externalIds(type, platformId) -> { device, feature(key) }
+// It reproduces the only surface the integration relies on:
+//   - externalIds(type, platformId)  -> { device, feature(key) }
 //   - publishState / publishStates   -> record calls so tests can assert them
 //   - publishCameraImage             -> record calls so tests can assert them
 //   - publishTransports              -> record calls so tests can assert them
+//   - publishDiscoveredDevices       -> record calls so tests can assert them
 //   - setConnectionStatus            -> record calls so tests can assert them
 //   - getContainers / startContainer -> in-memory sub-container lifecycle,
 //     seeded via `containers` option, mutated the same way the real supervisor
 //     would (see gatewayClient.js's ensureGatewayRunning)
-//   - getConfig                      -> returns `config` option
+//   - getConfig / setConfig          -> in-memory config, seeded via `config`
+//   - onScanRequest / onPoll / onConfigUpdated / onAction / on / handleShutdown
+//     -> registers the callback under the SAME invocation shape the real SDK
+//     uses (verified against integration-sdk's index.d.ts), so calling a
+//     captured handler directly in a test exercises the exact call shape
+//     production code will receive - this is what caught index.js's onAction
+//     destructuring bug (see test/index.test.js).
 // This lets us test the pure "wiring" logic (discovery payloads, dispatch,
 // sub-container lifecycle) without a running Gladys server or a real
 // WebSocket.
@@ -20,16 +27,31 @@ export function createFakeGladys(options = {}) {
   const published = [];
   const cameraImages = [];
   const transports = [];
+  const discoveredDevices = [];
   const connectionStatuses = [];
   const startContainerCalls = [];
+  const setConfigCalls = [];
   let containers = options.containers ?? [];
+  let config = options.config ?? {};
+
+  const handlers = {
+    scanRequest: null,
+    poll: null,
+    configUpdated: null,
+    actions: {},
+    events: {},
+    shutdown: null,
+  };
 
   return {
     published,
     cameraImages,
     transports,
+    discoveredDevices,
     connectionStatuses,
     startContainerCalls,
+    setConfigCalls,
+    handlers,
 
     externalIds(type, platformId) {
       const device = `${type}:${platformId}`;
@@ -55,6 +77,10 @@ export function createFakeGladys(options = {}) {
 
     async publishTransports(entries) {
       transports.push(...entries);
+    },
+
+    async publishDiscoveredDevices(devices) {
+      discoveredDevices.push(...devices);
     },
 
     async setConnectionStatus(connected, message) {
@@ -85,7 +111,36 @@ export function createFakeGladys(options = {}) {
     },
 
     async getConfig() {
-      return options.config ?? {};
+      return config;
+    },
+
+    async setConfig(newConfig) {
+      setConfigCalls.push(newConfig);
+      config = { ...config, ...newConfig };
+    },
+
+    onScanRequest(callback) {
+      handlers.scanRequest = callback;
+    },
+
+    onPoll(callback) {
+      handlers.poll = callback;
+    },
+
+    onConfigUpdated(callback) {
+      handlers.configUpdated = callback;
+    },
+
+    onAction(key, callback) {
+      handlers.actions[key] = callback;
+    },
+
+    on(event, listener) {
+      handlers.events[event] = listener;
+    },
+
+    handleShutdown(callback) {
+      handlers.shutdown = callback;
     },
   };
 }
