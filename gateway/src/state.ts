@@ -179,4 +179,19 @@ export class StateStore {
       [...this.chargers.entries()].map(([id, state]) => [id, state.toJSON()]),
     );
   }
+
+  /**
+   * Discards ALL observed state for `identity` (connectors, in-progress
+   * transactions, history) and starts it fresh. Used when a charge point
+   * switches from local mode (no real origin cloud, fake locally-invented
+   * transaction ids - see localMode.ts) into relay mode: a transaction
+   * started locally is meaningless once a REAL origin cloud is about to
+   * assign its own. Best-effort display cleanup, not a full protocol fix -
+   * see gateway.ts's header comment on the known limitation if the charge
+   * point itself keeps referencing the old (fake) transaction id after
+   * reconnecting.
+   */
+  reset(identity: string): void {
+    this.chargers.set(identity, new ChargerState(identity));
+  }
 }

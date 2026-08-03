@@ -15,13 +15,16 @@ to start, stop, or limit a charge from Gladys yet.
 ## How it works
 
 The integration runs its own OCPP relay in a companion container, started
-automatically on install. Every charge point connects to the **same** port
-Gladys assigns — the relay tells them apart by the identity each one
-announces on connection, and forwards each one's traffic to **its own**
-configured origin cloud, so every charger keeps working exactly as before —
+automatically on install. Every charge point connects to the **same** URL —
+the relay tells them apart by the identity each one announces on
+connection. A charge point doesn't need to be configured to connect: the
+relay supervises **any** connecting charge point locally right away
+(answers it normally, observes its real status), and only forwards its
+traffic to **its own** configured origin cloud once you've attached one
+(see Setup below) — so every charger keeps working exactly as before,
 nothing about any vendor's service is changed or replaced. The relay only
 _observes_ what passes through it to build the state shown in Gladys; it
-never invents or withholds anything on the wire.
+never invents or withholds anything on the wire, in either mode.
 
 ## Prerequisite
 
@@ -35,50 +38,44 @@ you ever want to stop using this integration for that charger.
 
 ## Setup
 
-Configure each charge point **before** pointing it at the relay. Most charge
-points won't complete a connection to a server that doesn't already know
-their identity — a first connection attempt against an unconfigured relay
-is typically rejected and not gracefully retried, so getting the order right
-matters.
+No required order: point a charge point at the relay whenever you like,
+before or after configuring it. It shows up in Discovery the moment it
+connects, whether or not it has an origin cloud yet.
 
 1. Install the integration — its relay starts automatically, no
    configuration needed yet.
-2. Find the charge point's **identity** (sometimes called serial number or
-   charge point ID) in its vendor app or portal, or on a label on the
-   charger itself.
-3. Run the **"Add a charge point"** action (Configuration screen): paste the
-   identity, and the **origin cloud URL** exactly as shown by that charger's
-   vendor app — including any trailing query string some vendors use (e.g.
-   ending in `?sn=`). Any such quirk only concerns the relay's outbound
-   connection to that vendor's cloud — it is invisible to the charge point
-   itself. As soon as the action completes, the charge point shows up in the
-   **Discovery** tab, ready to be created as a device — it does not need to
-   have connected yet. Its configured origin cloud URL is shown right there
-   on its card (and later, once created, on the device itself) — that's the
-   only place to check it, there is no list of configured charge points
-   anywhere else.
-4. Open the integration's **Supervision** screen: the connection status
+2. Open the integration's **Supervision** screen: the connection status
    shows a ready-to-use OCPP URL, `ws://<this Gladys host's LAN
 address>:<port>/` — the port is already filled in for you, just replace
    the placeholder with this Gladys host's actual LAN address. This URL is
    the **same for every charge point**.
-5. In the charge point's vendor app, point its OCPP server URL there.
-6. Since it is already configured, the charge point connects and starts
-   relaying right away — the device created in step 3 starts reporting real
-   data.
-7. Repeat steps 2-6 for every other charge point — same URL, its own
-   identity, its own origin cloud URL, even a different vendor.
+3. In the charge point's vendor app, point its OCPP server URL there. It
+   connects right away and shows up in the **Discovery** tab, ready to be
+   created as a device — its real status (plugged, charging, etc.) is
+   already supervised even though it isn't relayed to any cloud yet.
+4. Whenever you're ready to route it to its real cloud instead: find the
+   charge point's **identity** (sometimes called serial number or charge
+   point ID — shown on its Discovery/device card, in its vendor app, or on a
+   label on the charger) and run the **"Add a charge point"** action
+   (Configuration screen) with that identity and the **origin cloud URL**
+   exactly as shown by the vendor app — including any trailing query string
+   some vendors use (e.g. ending in `?sn=`). Any such quirk only concerns
+   the relay's outbound connection to that vendor's cloud — it is invisible
+   to the charge point itself. The charge point reconnects automatically
+   within a few seconds and starts relaying instead of just being
+   supervised locally. Its configured origin cloud URL is then shown right
+   on its card (Discovery, then the device once created) — that's the only
+   place to check it, there is no list of configured charge points anywhere
+   else.
+5. Repeat step 4 for every other charge point you want relayed — same URL,
+   its own identity, its own origin cloud URL, even a different vendor.
 
 To fix a mistake or change a charge point's origin cloud URL, run the action
 again with the same identity and the corrected URL (check its current URL
-on its device card first). To remove a charge point, run the action with
-its identity and an **empty** URL.
-
-If a charge point connects before you've added it here (or with an identity
-that doesn't match what you typed), it is rejected and listed as **detected,
-awaiting configuration** in the connection status, with the exact identity
-it announced — a useful way to catch a typo, but not the intended flow: add
-it first, then point it at the relay.
+on its device card first). To detach a charge point from its cloud and put
+it back into local-only supervision, run the action with its identity and
+an **empty** URL — takes effect the next time that charge point reconnects
+(it keeps relaying through its current connection until then).
 
 ## Multiple connectors
 
@@ -111,9 +108,15 @@ relay. Keep this in mind on a shared or untrusted network.
   points are configured — the integration re-sends the full configured set
   as soon as it reconnects to Gladys, so this self-heals within seconds and
   does not require re-running the action. Freshly restarted, already-known
-  charge points briefly disappear from "detected" state until they
-  reconnect (normally within seconds); this does not delete any device you
-  already created in Gladys.
+  charge points briefly disappear until they reconnect (normally within
+  seconds); this does not delete any device you already created in Gladys.
+- **Starting a charge session while a charge point is still locally
+  supervised (no origin cloud attached yet), then attaching a cloud mid-session:**
+  the charge point may keep referencing the session it started locally once
+  it reconnects into relay mode, which the real origin cloud never saw. A
+  rare overlap in practice (attaching a cloud is usually done once, right
+  after first connecting) — if it happens, the affected session's data may
+  not reach the origin cloud correctly; the next session is unaffected.
 - **No control from Gladys.** Starting, stopping, or limiting a charge is not
   possible in this version.
 

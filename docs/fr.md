@@ -16,14 +16,18 @@ charge depuis Gladys.
 ## Fonctionnement
 
 L'intégration embarque son propre relais OCPP dans un sous-conteneur,
-démarré automatiquement à l'installation. Chaque borne se connecte au
-**même** port assigné par Gladys — le relais les distingue grâce à
-l'identity que chacune annonce à la connexion, et transmet le trafic de
-chaque borne vers **son propre** cloud d'origine configuré, si bien que
-chaque borne continue de fonctionner exactement comme avant — rien n'est
-changé ni remplacé côté service d'aucun fabricant. Le relais se contente
-d'_observer_ ce qui transite pour construire l'état affiché dans Gladys ; il
-n'invente ni ne retient jamais rien sur le fil.
+démarré automatiquement à l'installation. Chaque borne se connecte à la
+**même** URL — le relais les distingue grâce à l'identity que chacune
+annonce à la connexion. Une borne n'a pas besoin d'être configurée pour se
+connecter : le relais supervise localement **toute** borne qui se connecte,
+tout de suite (elle lui répond normalement, il observe son statut réel), et
+ne transmet son trafic vers **son propre** cloud d'origine configuré
+qu'une fois que vous lui en avez associé un (voir Installation ci-dessous)
+— si bien que chaque borne continue de fonctionner exactement comme avant,
+rien n'est changé ni remplacé côté service d'aucun fabricant. Le relais se
+contente d'_observer_ ce qui transite pour construire l'état affiché dans
+Gladys ; il n'invente ni ne retient jamais rien sur le fil, dans aucun des
+deux modes.
 
 ## Prérequis
 
@@ -39,54 +43,48 @@ cette intégration.
 
 ## Installation
 
-Configurez chaque borne **avant** de la faire pointer vers le relais. La
-plupart des bornes ne terminent pas leur connexion vers un serveur qui ne
-connaît pas déjà leur identity — une première tentative de connexion contre
-un relais non configuré est généralement rejetée et pas réessayée
-proprement, donc l'ordre des étapes compte.
+Aucun ordre requis : pointez une borne vers le relais quand vous voulez,
+avant ou après l'avoir configurée. Elle apparaît dans Découverte dès qu'elle
+se connecte, qu'elle ait ou non un cloud d'origine.
 
 1. Installez l'intégration — son relais démarre automatiquement, aucune
    configuration n'est nécessaire pour l'instant.
-2. Trouvez l'**identity** de la borne (parfois appelée numéro de série ou
-   identifiant de la borne) dans son application ou son portail fabricant,
-   ou sur une étiquette de la borne elle-même.
-3. Lancez l'action **"Ajouter une borne"** (écran Configuration) : collez
-   l'identity, et l'**URL du cloud d'origine** telle qu'affichée par
-   l'application de cette borne — y compris une éventuelle chaîne de requête
-   finale que certains fabricants utilisent (ex. se terminant par `?sn=`).
-   Une telle astuce ne concerne que la connexion sortante du relais vers le
-   cloud de ce fabricant — elle est invisible pour la borne elle-même. Dès
-   que l'action se termine, la borne apparaît dans l'onglet **Découverte**,
-   prête à être créée comme appareil — pas besoin qu'elle se soit déjà
-   connectée. Son URL de cloud d'origine configurée est affichée directement
-   sur sa fiche (puis, une fois créée, sur l'appareil lui-même) — c'est le
-   seul endroit pour la consulter, il n'existe aucune liste des bornes
-   configurées ailleurs.
-4. Ouvrez l'écran **Supervision** de l'intégration : le statut de connexion
+2. Ouvrez l'écran **Supervision** de l'intégration : le statut de connexion
    affiche une URL OCPP prête à l'emploi, `ws://<adresse LAN de cet hôte
 Gladys>:<port>/` — le port est déjà rempli pour vous, il ne reste qu'à
    remplacer le texte générique par l'adresse LAN réelle de cet hôte Gladys.
    Cette URL est **la même pour toutes les bornes**.
-5. Dans l'application de la borne, faites pointer son URL de serveur OCPP
-   vers cette adresse.
-6. Étant déjà configurée, la borne se connecte et commence à être relayée
-   immédiatement — l'appareil créé à l'étape 3 commence à recevoir de
-   vraies données.
-7. Répétez les étapes 2 à 6 pour chaque autre borne — même URL, sa propre
+3. Dans l'application de la borne, faites pointer son URL de serveur OCPP
+   vers cette adresse. Elle se connecte tout de suite et apparaît dans
+   l'onglet **Découverte**, prête à être créée comme appareil — son statut
+   réel (branchée, en charge, etc.) est déjà supervisé même si elle n'est
+   pas encore relayée vers un cloud.
+4. Quand vous êtes prêt à la router vers son vrai cloud : trouvez
+   l'**identity** de la borne (parfois appelée numéro de série ou
+   identifiant de la borne — visible sur sa fiche Découverte/appareil, dans
+   son application fabricant, ou sur une étiquette de la borne) et lancez
+   l'action **"Ajouter une borne"** (écran Configuration) avec cette
+   identity et l'**URL du cloud d'origine** telle qu'affichée par
+   l'application de cette borne — y compris une éventuelle chaîne de requête
+   finale que certains fabricants utilisent (ex. se terminant par `?sn=`).
+   Une telle astuce ne concerne que la connexion sortante du relais vers le
+   cloud de ce fabricant — elle est invisible pour la borne elle-même. La
+   borne se reconnecte automatiquement en quelques secondes et commence à
+   être relayée au lieu d'être simplement supervisée localement. Son URL de
+   cloud d'origine configurée est alors affichée directement sur sa fiche
+   (Découverte, puis l'appareil une fois créé) — c'est le seul endroit pour
+   la consulter, il n'existe aucune liste des bornes configurées ailleurs.
+5. Répétez l'étape 4 pour chaque autre borne à relayer — même URL, sa propre
    identity, sa propre URL de cloud d'origine, même d'un fabricant
    différent.
 
 Pour corriger une erreur ou changer l'URL du cloud d'origine d'une borne,
 relancez l'action avec la même identity et l'URL corrigée (vérifiez d'abord
-son URL actuelle sur sa fiche appareil). Pour retirer une borne, relancez
-l'action avec son identity et une URL **vide**.
-
-Si une borne se connecte avant d'avoir été ajoutée ici (ou avec une identity
-différente de celle saisie), elle est rejetée et listée comme **détectée, en
-attente de configuration** dans le statut de connexion, avec l'identity
-exacte qu'elle a annoncée — utile pour repérer une erreur de saisie, mais ce
-n'est pas le fonctionnement prévu : ajoutez-la d'abord, puis faites-la
-pointer vers le relais.
+son URL actuelle sur sa fiche appareil). Pour détacher une borne de son
+cloud et la remettre en supervision locale uniquement, relancez l'action
+avec son identity et une URL **vide** — prend effet à la prochaine
+reconnexion de cette borne (elle continue d'être relayée via sa connexion
+en cours jusque-là).
 
 ## Connecteurs multiples
 
@@ -122,9 +120,17 @@ via le relais. Gardez cela à l'esprit sur un réseau partagé ou non fiable.
   renvoie l'ensemble complet des bornes configurées dès qu'elle se reconnecte
   à Gladys, donc ça se répare tout seul en quelques secondes, sans avoir à
   relancer l'action. Juste après un redémarrage, des bornes déjà connues
-  disparaissent brièvement de l'état "détectée" jusqu'à leur reconnexion
-  (généralement quelques secondes) ; cela ne supprime jamais un appareil déjà
-  créé dans Gladys.
+  disparaissent brièvement jusqu'à leur reconnexion (généralement quelques
+  secondes) ; cela ne supprime jamais un appareil déjà créé dans Gladys.
+- **Démarrer une charge pendant qu'une borne est encore supervisée
+  localement (pas de cloud d'origine associé), puis associer un cloud en
+  cours de session :** la borne peut continuer de référencer la session
+  démarrée localement une fois reconnectée en mode relais, que le vrai cloud
+  d'origine n'a jamais vue. Un chevauchement rare en pratique (associer un
+  cloud se fait généralement une seule fois, juste après la première
+  connexion) — si cela arrive, les données de cette session peuvent ne pas
+  remonter correctement au cloud d'origine ; la session suivante n'est pas
+  affectée.
 - **Aucun pilotage depuis Gladys.** Démarrer, arrêter ou limiter une charge
   n'est pas possible dans cette version.
 

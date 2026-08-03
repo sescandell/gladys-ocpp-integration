@@ -4,13 +4,20 @@
  * (`http://gateway:<UI_PORT>`, see `../src/gatewayClient.js`). Never exposed
  * to the LAN, never meant to be opened in a browser.
  *
- * - `GET /api/state`  - full state of every configured charge point, plus
- *   the identities seen connecting without being configured yet ("pending").
+ * - `GET /api/state`  - full observed state of every charge point the
+ *   gateway currently knows about (both configured/relayed and
+ *   local-mode/unconfigured - see gateway.ts, they land in the same
+ *   `StateStore`).
  * - `POST /api/chargers` - full replace of the live identity -> origin cloud
  *   URL map (see `chargerRegistry.ts`), called by the main container every
  *   time the set of configured charge points changes (the `add_charger`
  *   action) or on every reconnection, so this process never needs to be
- *   restarted to pick up a config change.
+ *   restarted to pick up a config change. Any identity that just became
+ *   configured AND is currently connected in local mode gets its live
+ *   connection force-closed here, so it reconnects and picks up full relay
+ *   mode (see gateway.ts's `localClients`) - naturally idempotent, since a
+ *   subsequent push finds `registry.resolve()` already returning the URL
+ *   and skips it.
  */
 
 import { createServer as createHttpServer, type Server } from 'node:http';
@@ -18,13 +25,22 @@ import { text } from 'node:stream/consumers';
 import type { StateStore } from './state.ts';
 import type { ChargerRegistry } from './chargerRegistry.ts';
 
-export function createStateApiServer(store: StateStore, registry: ChargerRegistry): Server {
+/** The only surface stateApi.ts needs from a live charge-point connection. */
+export interface LocalClient {
+  close(options?: { code?: number; reason?: string }): Promise<void>;
+}
+
+export function createStateApiServer(
+  store: StateStore,
+  registry: ChargerRegistry,
+  localClients: Map<string, LocalClient>,
+): Server {
   return createHttpServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
     if (req.method === 'GET' && url.pathname === '/api/state') {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ chargers: store.toJSON(), pending: registry.pendingList() }));
+      res.end(JSON.stringify({ chargers: store.toJSON() }));
       return;
     }
 
@@ -49,7 +65,23 @@ export function createStateApiServer(store: StateStore, registry: ChargerRegistr
             }
             chargers[identity] = originCloudUrl;
           }
+
+          // Snapshot BEFORE replaceMap(): identities newly gaining a
+          // configured URL that are currently live in local mode.
+          const newlyConfigured = Object.keys(chargers).filter(
+            (identity) => registry.resolve(identity) === undefined && localClients.has(identity),
+          );
+
           registry.replaceMap(chargers);
+
+          for (const identity of newlyConfigured) {
+            const client = localClients.get(identity);
+            store.reset(identity);
+            client
+              ?.close({ code: 1000, reason: 'reconfigured - reconnect for full relay mode' })
+              .catch(() => {});
+          }
+
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ success: true, configuredCount: Object.keys(chargers).length }));
         })

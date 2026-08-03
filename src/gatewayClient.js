@@ -14,13 +14,14 @@ export const GATEWAY_SUB_CONTAINER_NAME = 'gateway';
 export const GATEWAY_OCPP_CONTAINER_PORT = 9321;
 
 /**
- * Fetch the full gateway state: every configured charge point currently
- * known (keyed by OCPP identity), plus the identities seen connecting
- * without being configured yet ("pending" - see the gateway's
- * ChargerRegistry).
+ * Fetch the full gateway state: every charge point it currently knows about
+ * (keyed by OCPP identity), whether configured (relayed to a real origin
+ * cloud) or merely auto-detected (connected once, supervised locally - see
+ * the gateway's "local mode", gateway/src/gateway.ts) - both live in the
+ * same observed-state map.
  * @param {string} [baseUrl] override for tests; defaults to the fixed
  *   internal URL used in production (see module doc comment above).
- * @returns {Promise<{chargers: Record<string, object>, pending: Array<{identity: string, firstSeenAt: string, lastSeenAt: string}>}>}
+ * @returns {Promise<{chargers: Record<string, object>}>}
  */
 export async function fetchGatewayState(baseUrl = GATEWAY_INTERNAL_URL) {
   const res = await fetch(`${baseUrl}/api/state`, { signal: AbortSignal.timeout(10_000) });

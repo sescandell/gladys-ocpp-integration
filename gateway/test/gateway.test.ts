@@ -13,7 +13,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RPCClient, RPCServer } from 'ocpp-rpc';
 import type { IHandlersOption } from 'ocpp-rpc';
-import { createGatewayServer, store, registry } from '../src/gateway.ts';
+import { createGatewayServer, store, registry, localClients } from '../src/gateway.ts';
+import { createStateApiServer } from '../src/stateApi.ts';
 import type {
   BootNotificationResponse,
   StartTransactionResponse,
@@ -247,7 +248,7 @@ test('two different charge points route to two different origin clouds', async (
   assert.equal(response2.vendorNote, `primary-${PRIMARY_2_PORT}-CP-VENDOR-2`);
 });
 
-test('an unconfigured identity is recorded as pending and closed cleanly, no crash', async (t) => {
+test('an unconfigured identity connects in LOCAL MODE: synthesized Accepted responses, real state observed', async (t) => {
   const PORT = 19545; // distinct from originConnectionWire.test.ts's CLOUD_PORT (files run concurrently)
 
   registry.replaceMap({}); // nothing configured
@@ -257,21 +258,53 @@ test('an unconfigured identity is recorded as pending and closed cleanly, no cra
 
   const client = new RPCClient({
     endpoint: `ws://localhost:${PORT}`,
-    identity: 'CP-UNCONFIGURED',
+    identity: 'CP-LOCAL',
     protocols: ['ocpp1.6'],
     reconnect: false,
   } as ClientOptions);
-  const closed = new Promise<void>((resolve) => client.once('close', () => resolve()));
   await client.connect();
-  await closed;
+  t.after(() => client.close());
 
-  const pending = registry.pendingList();
-  assert.ok(pending.some((e) => e.identity === 'CP-UNCONFIGURED'));
+  const boot = (await client.call('BootNotification', {
+    chargePointVendor: 'test',
+    chargePointModel: 'local-mode',
+  })) as BootNotificationResponse & { vendorNote?: string };
+  assert.equal(boot.status, 'Accepted');
+  // No vendorNote: this is a locally-synthesized response, never touched a
+  // (nonexistent) primary - see localMode.ts.
+  assert.equal(boot.vendorNote, undefined);
+
+  await client.call('StatusNotification', {
+    connectorId: 1,
+    status: 'Available',
+    errorCode: 'NoError',
+  });
+
+  const start = (await client.call('StartTransaction', {
+    connectorId: 1,
+    idTag: 'tag-local',
+    meterStart: 100,
+    timestamp: new Date().toISOString(),
+  })) as StartTransactionResponse;
+  assert.equal(typeof start.transactionId, 'number');
+
+  await client.call('StopTransaction', {
+    transactionId: start.transactionId,
+    meterStop: 200,
+    timestamp: new Date().toISOString(),
+  });
+
+  const state = store.get('CP-LOCAL');
+  assert.equal(state.vendor, 'test');
+  assert.equal(state.connector(1).status, 'Available');
+  assert.equal(state.history[0]?.transactionId, start.transactionId);
+  assert.equal(state.history[0]?.meterStop, 200);
 });
 
-test('configuring a previously-pending identity (via replaceMap) lets the next connection through', async (t) => {
+test('local mode -> configured via POST /api/chargers -> forced reconnect -> relay mode takes over', async (t) => {
   const PORT = 19533;
   const PRIMARY_PORT_LOCAL = 19534;
+  const STATE_API_PORT = 19535;
 
   const { primaryServer } = fakePrimaryServer(PRIMARY_PORT_LOCAL);
   await primaryServer.listen(PRIMARY_PORT_LOCAL);
@@ -282,40 +315,57 @@ test('configuring a previously-pending identity (via replaceMap) lets the next c
   await gatewayServer.listen(PORT);
   t.after(() => gatewayServer.close({}));
 
-  const firstAttempt = new RPCClient({
+  const stateApiServer = createStateApiServer(store, registry, localClients);
+  await new Promise<void>((resolve) => stateApiServer.listen(STATE_API_PORT, resolve));
+  t.after(() => stateApiServer.close());
+
+  const client = new RPCClient({
     endpoint: `ws://localhost:${PORT}`,
-    identity: 'CP-LATE-CONFIG',
+    identity: 'CP-SWITCH',
     protocols: ['ocpp1.6'],
-    reconnect: false,
+    reconnect: true,
+    // Real hardware's own reconnect timing is out of our hands (see
+    // gateway.ts's header comment on this being validated separately) -
+    // shortened here purely so this test doesn't wait out the library's
+    // default backoff.
+    backoff: { initialDelay: 20, maxDelay: 50, factor: 1.1, randomisationFactor: 0 },
   } as ClientOptions);
-  const firstClosed = new Promise<void>((resolve) => firstAttempt.once('close', () => resolve()));
-  await firstAttempt.connect();
-  await firstClosed;
-  assert.ok(registry.pendingList().some((e) => e.identity === 'CP-LATE-CONFIG'));
+  await client.connect();
+  t.after(() => client.close());
 
-  // The main container configures it live - no gateway restart needed.
-  registry.replaceMap({ 'CP-LATE-CONFIG': `ws://localhost:${PRIMARY_PORT_LOCAL}` });
-  assert.equal(
-    registry.pendingList().some((e) => e.identity === 'CP-LATE-CONFIG'),
-    false,
-  );
-
-  const secondAttempt = new RPCClient({
-    endpoint: `ws://localhost:${PORT}`,
-    identity: 'CP-LATE-CONFIG',
-    protocols: ['ocpp1.6'],
-    reconnect: false,
-  } as ClientOptions);
-  await secondAttempt.connect();
-  t.after(() => secondAttempt.close());
-
-  const response = (await secondAttempt.call('BootNotification', {
+  const firstBoot = (await client.call('BootNotification', {
     chargePointVendor: 'x',
     chargePointModel: 'y',
-  })) as BootNotificationResponse & {
-    vendorNote?: string;
-  };
-  assert.equal(response.vendorNote, `primary-${PRIMARY_PORT_LOCAL}-CP-LATE-CONFIG`);
+  })) as BootNotificationResponse & { vendorNote?: string };
+  assert.equal(firstBoot.vendorNote, undefined); // local mode
+  assert.equal(localClients.has('CP-SWITCH'), true);
+
+  // With `reconnect: true`, the client's own 'close' event never fires on a
+  // server-initiated close (see client.js's _handleDisconnect: it only
+  // reaches `this.emit('close', ...)` in the non-reconnecting branch) -
+  // 'disconnect' fires unconditionally instead, exactly the signal needed
+  // here (a regression-relevant fact already established once this session
+  // for a different test, re-confirmed the hard way while writing this one).
+  const disconnected = new Promise<void>((resolve) => client.once('disconnect', () => resolve()));
+  const reopened = new Promise<void>((resolve) => client.once('open', () => resolve()));
+
+  const res = await fetch(`http://localhost:${STATE_API_PORT}/api/chargers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chargers: { 'CP-SWITCH': `ws://localhost:${PRIMARY_PORT_LOCAL}` } }),
+  });
+  assert.equal(res.status, 200);
+
+  await disconnected; // the forced close, triggered by the POST above
+  // ocpp-rpc's own default reconnect logic brings it back - listener
+  // registered BEFORE the disconnect (not after), so it can't miss a fast 'open'.
+  await reopened;
+
+  const secondBoot = (await client.call('BootNotification', {
+    chargePointVendor: 'x',
+    chargePointModel: 'y',
+  })) as BootNotificationResponse & { vendorNote?: string };
+  assert.equal(secondBoot.vendorNote, `primary-${PRIMARY_PORT_LOCAL}-CP-SWITCH`);
 });
 
 test('a configured but malformed origin cloud URL closes the connection cleanly, never crashes the process', async (t) => {

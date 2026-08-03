@@ -26,9 +26,11 @@ Charge point A ─┐                     Charge point B ─┐
 (OCPP 1.6J)      │                     (OCPP 1.6J)      │
                  v  same port                          v
 ┌── sub-container "gateway" (gateway/) ───────────────────┐
-│ RPCServer <-> one RPCClient per charge point, routed to │
-│ each one's own origin cloud by its real OCPP identity   │
-│ (ChargerRegistry) - passive observation, never decisional│
+│ RPCServer <-> one RPCClient per RELAYED charge point,   │
+│ routed by real OCPP identity (ChargerRegistry); an      │
+│ unconfigured one is answered locally instead (no cloud  │
+│ yet - localMode.ts) - passive observation either way,   │
+│ never decisional                                        │
 └───────────────────────────────────────────────────────────┘
         ^  internal HTTP (private network, DNS alias "gateway")
         |  GET /api/state, POST /api/chargers (live map sync)
@@ -54,7 +56,8 @@ Charge point A ─┐                     Charge point B ─┐
 ├─ gateway/                          # standalone sub-project: the OCPP relay sub-container
 │  ├─ src/
 │  │  ├─ gateway.ts                  #   RPCServer (charge points) <-> RPCClient (each origin cloud)
-│  │  ├─ chargerRegistry.ts          #   live identity -> origin cloud URL map + pending identities
+│  │  ├─ chargerRegistry.ts          #   live identity -> origin cloud URL map
+│  │  ├─ localMode.ts                #   synthesized "everything is fine" responses, no origin cloud yet
 │  │  ├─ originConnection.ts         #   generic path-segment vs. query-string identity addressing
 │  │  ├─ observe.ts                  #   OCPP message -> internal state updates
 │  │  ├─ state.ts                    #   ChargerState / ConnectorState / StateStore
@@ -74,40 +77,43 @@ Charge point A ─┐                     Charge point B ─┐
 
 ## Dynamic multi-charger discovery, one device per charge point
 
-Any number of charge points can be configured, one at a time, via the
-`add_charger` manifest action (identity + origin cloud URL) — `config_schema`
+A charge point does NOT need to be configured to be discovered: the gateway
+accepts any connection and answers it as a permissive, "everything is fine"
+local CSMS (`gateway/src/localMode.ts`) - no origin cloud, but real state
+IS observed (status, meter values) into the same store relay mode uses. So
+it shows up in Discovery the moment it connects, whether or not it has an
+origin cloud yet - genuinely automatic, the same reason any other
+integration's discovered devices show up.
+
+The origin cloud URL is attached separately, at any time, via the
+`add_charger` manifest action (identity + origin cloud URL) - `config_schema`
 is a flat, fixed list of fields, it cannot represent "add as many charge
 points as you want", so the set lives in free internal config storage
 (`src/chargers.js`, key `chargers_json`) instead, pushed live to the gateway
-sub-container (`POST /api/chargers`, see `gateway/src/chargerRegistry.ts`) -
-no container restart needed to add, update, or remove one.
-
-Charge points must be added **before** being pointed at the relay, not
-after: most CSMS/charge point implementations refuse (or don't gracefully
-retry) a first connection against a server that doesn't already recognize
-their identity, so the intended flow is declare-first — the user already
-knows each identity from the vendor app or a label on the charger, see
-`docs/en.md`/`docs/fr.md`. A charge point that connects with an identity the
-registry doesn't know yet is recorded as **pending** and closed cleanly
-(nothing to relay it to); its identity is surfaced in the integration's
-connection status message purely as a diagnostic aid (catching a typo), not
-as the primary discovery mechanism.
+sub-container (`POST /api/chargers`, see `gateway/src/stateApi.ts`) - no
+container restart needed to add, update, or remove one. The moment a
+previously-unconfigured identity gets a URL, `stateApi.ts` force-closes
+that ONE charge point's live connection (`gateway.ts`'s `localClients` map,
+since `ocpp-rpc` exposes no identity-keyed lookup of its own connections) -
+it reconnects and this time resolves to full relay mode. Removing a charge
+point's URL takes effect on its next reconnection, not retroactively (an
+already-relaying session isn't interrupted).
 
 `src/devices/charger.js`'s `buildDevices()` offers ONE Gladys device per
-configured charge point (`config.chargers`), as soon as it is configured -
-it does not need to have connected yet. This matches the SDK's own
-discovery contract ("your integration never creates or deletes devices, it
-publishes the devices it discovers, and the user decides which ones to
-create" - the official dev docs), the same pattern a cloud/account-based
-integration uses to list devices from its own registry, online or not. A
-charge point can have several physical connectors: each one is a small
-group of features on that SAME device (`Connector <n> - <label>`, OCPP
-connector `0` - the aggregate charge point - is always excluded), seeded
-with connector 1 by default (the OCPP-conventional first, and for most real
-hardware only, connector) until the gateway actually observes more via
-`StatusNotification`. Growing the feature list of an already-created device
-surfaces as an "Update" button in Gladys - the user stays in control of
-structural changes.
+identity in the union of `config.chargers` (configured) and the gateway's
+full observed-state map (includes auto-detected identities too). This
+matches the SDK's own discovery contract ("your integration never creates
+or deletes devices, it publishes the devices it discovers, and the user
+decides which ones to create" - the official dev docs), the same pattern a
+cloud/account-based integration uses to list devices from its own registry,
+online or not. A charge point can have several physical connectors: each
+one is a small group of features on that SAME device (`Connector <n> -
+<label>`, OCPP connector `0` - the aggregate charge point - is always
+excluded), seeded with connector 1 by default (the OCPP-conventional first,
+and for most real hardware only, connector) until the gateway actually
+observes more via `StatusNotification`. Growing the feature list of an
+already-created device surfaces as an "Update" button in Gladys - the user
+stays in control of structural changes.
 
 Each device also carries its configured origin cloud URL as a `param` (not
 a `feature` - it's config, not telemetry): Gladys renders a device's

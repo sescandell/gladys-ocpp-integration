@@ -24,7 +24,7 @@ function startFakeGatewayServer() {
   const server = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/api/state') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ chargers: {}, pending: [] }));
+      res.end(JSON.stringify({ chargers: {} }));
       return;
     }
     if (req.method === 'POST' && req.url === '/api/chargers') {
@@ -52,7 +52,7 @@ function startFlakyGatewayServer(failCount) {
   const server = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/api/state') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ chargers: {}, pending: [] }));
+      res.end(JSON.stringify({ chargers: {} }));
       return;
     }
     if (req.method === 'POST' && req.url === '/api/chargers') {
@@ -152,6 +152,9 @@ test("connected event: called with no arguments (the real SDK shape), doesn't th
   assert.ok(typeof connectedHandler === 'function', 'a "connected" listener must be registered');
   await connectedHandler();
   assert.ok(gladys.connectionStatuses.length > 0);
+  // The "pending" concept is gone - auto-detected charge points show up
+  // directly in Discovery instead (see src/devices/charger.js).
+  assert.doesNotMatch(gladys.connectionStatuses.at(-1).message.en, /awaiting configuration/i);
 });
 
 test('reconcileGateway (via "connected"): connection status shows the ready-to-use OCPP URL, not a generic sentence', async (t) => {

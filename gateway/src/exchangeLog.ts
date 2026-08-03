@@ -7,7 +7,8 @@
  * separate debug UI (see stateApi.ts's header comment for why).
  */
 
-export type ExchangeDirection = 'EV Charger -> Primary' | 'Primary -> EV Charger';
+export type ExchangeDirection =
+  'EV Charger -> Primary' | 'Primary -> EV Charger' | 'EV Charger -> Local (unconfigured)';
 
 export interface ExchangeOutcome {
   ok: boolean;

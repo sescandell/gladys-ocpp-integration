@@ -13,25 +13,51 @@
  * its own origin cloud independently, resolved by its real OCPP identity (the
  * one it announces on connection) against the live registry - never a
  * position/index in the URL, which would depend on unverifiable per-vendor
- * firmware behavior. A charge point connecting with an identity the registry
- * doesn't know yet is recorded as "pending" and closed cleanly: nothing to
- * relay it to until the user configures it in Gladys (the `add_charger`
- * action).
+ * firmware behavior.
  *
- * Two connections per charge point: a CSMS-side server facing the charge
- * point, and an OCPP client facing its configured origin cloud (the
- * "primary"). The business logic is an OBSERVATION of the primary's REAL
- * response, never an autonomous decision: the transactionId recorded in the
- * internal state is the one the primary assigned, never invented locally -
- * otherwise the history would not match what the charge point/cloud actually
- * use for a later StopTransaction.
+ * TWO MODES per charge point, decided at connection time:
  *
- * Response asymmetry: for a CALL initiated by the charge point, only the
- * primary's response matters to the charge point. Multi-charge-point
- * isolation: one (charge point client, primary client) pair per identity,
- * closed over its own connection closure, no shared state. No strictMode
- * (faithful passthrough, including vendor-specific messages not covered by
- * the OCPP schema embedded in ocpp-rpc).
+ * - RELAY MODE (identity has a configured origin cloud URL): a CSMS-side
+ *   server facing the charge point, and an OCPP client facing its origin
+ *   cloud (the "primary"). The business logic is an OBSERVATION of the
+ *   primary's REAL response, never an autonomous decision: the
+ *   transactionId recorded in the internal state is the one the primary
+ *   assigned, never invented locally - otherwise the history would not
+ *   match what the charge point/cloud actually use for a later
+ *   StopTransaction. Response asymmetry: for a CALL initiated by the
+ *   charge point, only the primary's response matters to the charge point.
+ *
+ * - LOCAL MODE (identity not configured yet - see `localMode.ts`): the
+ *   gateway itself acts as a permissive, "everything is fine" CSMS -
+ *   accepts the connection, answers every OCPP call with a synthesized
+ *   generic-success response, and still runs it through `observe()` so
+ *   real telemetry (status, meter values) lands in the SAME `StateStore` as
+ *   relay mode. Nothing is forwarded anywhere: there is no origin cloud
+ *   yet. This makes a charge point auto-detected and immediately
+ *   supervisable the moment it connects - no more "declare its identity
+ *   before pointing it at the relay" ordering requirement. The moment the
+ *   user configures an origin_cloud_url for that identity (`add_charger`
+ *   action -> `POST /api/chargers`, see `stateApi.ts`), THAT ONE charge
+ *   point's live connection is force-closed so it reconnects and this time
+ *   resolves to relay mode - `localClients` (below) is what makes that
+ *   possible: `ocpp-rpc`'s `RPCServer` exposes no identity-keyed lookup of
+ *   its own connected clients.
+ *
+ *   Known limitation: a transaction STARTED while in local mode gets a
+ *   locally-invented transactionId (see `localMode.ts`) the real origin
+ *   cloud never issued. `stateApi.ts` clears our own stale state on the
+ *   forced reconnect (`store.reset()`), but the physical charge point may
+ *   keep referencing that fake id after reconnecting (OCPP transactions
+ *   typically survive a WebSocket reconnect in real firmware) - a real,
+ *   accepted correctness gap for what should be a rare overlap (actively
+ *   charging exactly when first configuring that charge point), not worth
+ *   the complexity of blocking reconnects until a transaction ends.
+ *
+ * Multi-charge-point isolation either way: one connection (plus, in relay
+ * mode, one primary client) per identity, closed over its own connection
+ * closure, no shared state. No strictMode (faithful passthrough, including
+ * vendor-specific messages not covered by the OCPP schema embedded in
+ * ocpp-rpc).
  */
 
 import { fileURLToPath } from 'node:url';
@@ -40,9 +66,10 @@ import type { IHandlersOption } from 'ocpp-rpc';
 import { StateStore } from './state.ts';
 import { ChargerRegistry } from './chargerRegistry.ts';
 import { observe } from './observe.ts';
-import { createStateApiServer } from './stateApi.ts';
+import { createStateApiServer, type LocalClient } from './stateApi.ts';
 import { formatExchangeLog } from './exchangeLog.ts';
 import { buildPrimaryConnectionOptions } from './originConnection.ts';
+import { synthesizeLocalResponse } from './localMode.ts';
 
 export interface GatewayOptions {
   protocols?: string[];
@@ -52,6 +79,8 @@ const DEFAULT_PROTOCOLS = ['ocpp1.6'];
 
 export const store = new StateStore();
 export const registry = new ChargerRegistry();
+/** Currently-connected charge points in LOCAL MODE only - see header comment. */
+export const localClients: Map<string, LocalClient> = new Map();
 
 export function createGatewayServer(options: GatewayOptions = {}) {
   const protocols = options.protocols ?? DEFAULT_PROTOCOLS;
@@ -71,9 +100,35 @@ export function createGatewayServer(options: GatewayOptions = {}) {
 
     const originCloudUrl = registry.resolve(identity);
     if (originCloudUrl === undefined) {
-      registry.recordPending(identity);
-      console.log(`[connect] ${identity} - no origin cloud configured yet, closing (pending)`);
-      client.close({ code: 1011, reason: 'awaiting configuration in Gladys' }).catch(() => {});
+      // LOCAL MODE: no origin cloud configured yet - see header comment.
+      // Permissive, generic-success responses, real telemetry still
+      // observed into `state` (the same StateStore relay mode uses).
+      console.log(`[connect] ${identity} - local mode (no origin cloud configured yet)`);
+      localClients.set(identity, client);
+
+      client.handle(async (args: IHandlersOption) => {
+        const method = args.method as string;
+        const params = args.params;
+        const response = synthesizeLocalResponse(method, params);
+        observe(state, method, params, response);
+        console.log(
+          formatExchangeLog('EV Charger -> Local (unconfigured)', identity, method, params, {
+            ok: true,
+            response,
+          }),
+        );
+        return response;
+      });
+
+      client.on('close', () => {
+        console.log(`[disconnect] ${identity} (local mode)`);
+        // Guard against a fast reconnect race: only remove if the map still
+        // holds THIS client instance (a newer connection may have already
+        // replaced it).
+        if (localClients.get(identity) === client) {
+          localClients.delete(identity);
+        }
+      });
       return;
     }
 
@@ -184,7 +239,7 @@ async function main() {
   console.log(`gateway listening on ws://0.0.0.0:${port}/`);
 
   const stateApiPort = Number.parseInt(process.env.UI_PORT ?? '9080', 10);
-  const stateApiServer = createStateApiServer(store, registry);
+  const stateApiServer = createStateApiServer(store, registry, localClients);
   await new Promise<void>((resolve) => stateApiServer.listen(stateApiPort, resolve));
   console.log(
     `gateway internal state API listening on http://0.0.0.0:${stateApiPort}/ (private network only)`,

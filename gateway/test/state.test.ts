@@ -73,3 +73,19 @@ test('StateStore.toJSON serializes every charger, connectors keyed by id', () =>
   assert.equal(json['CP-1'].identity, 'CP-1');
   assert.equal(json['CP-1'].connectors[1].status, 'Charging');
 });
+
+test('StateStore.reset() replaces a charger with a fresh, empty state', () => {
+  const store = new StateStore();
+  const before = store.get('CP-1');
+  before.patchConnector(1, { status: 'Charging' });
+  before.startTransaction(1, 7, 'tag-1', 0, '2026-08-01T10:00:00.000Z');
+  assert.equal(before.transactions.size, 1);
+
+  store.reset('CP-1');
+
+  const after = store.get('CP-1');
+  assert.notEqual(after, before);
+  assert.equal(after.connectors.size, 0);
+  assert.equal(after.transactions.size, 0);
+  assert.equal(after.history.length, 0);
+});

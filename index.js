@@ -8,14 +8,17 @@
 // read-only via GET /api/state, and driven via POST /api/chargers
 // (src/gatewayClient.js).
 //
-// Any number of charge points can be configured, one at a time, through the
-// `add_charger` manifest action (see registerHandlers's gladys.onAction
-// below) - not through the generated config form (Gladys's config_schema is
-// a flat, fixed list of fields, it cannot represent "add as many charge
-// points as you want"). The set of configured charge points lives in free
-// internal config storage (see src/chargers.js), pushed LIVE to the gateway
-// sub-container - no restart needed to pick up a newly configured (or
-// removed) charge point.
+// A charge point does NOT need to be configured to show up: the gateway
+// accepts any connection and supervises it locally (see gateway/src/
+// gateway.ts's "local mode"), so it appears in Discovery the moment it
+// connects. The `add_charger` manifest action (see registerHandlers's
+// gladys.onAction below) is only needed to attach an origin cloud URL and
+// switch that one charge point into full relay mode - not through the
+// generated config form (Gladys's config_schema is a flat, fixed list of
+// fields, it cannot represent "add as many charge points as you want"). The
+// set of configured charge points lives in free internal config storage
+// (see src/chargers.js), pushed LIVE to the gateway sub-container - no
+// restart needed to pick up a newly configured (or removed) charge point.
 //
 // V1: READ-ONLY - no onSetValue registered. A handler absent for a command
 // the SDK receives is automatically acked "not implemented" - no defensive
@@ -33,7 +36,7 @@ import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
 import { normalizeConfig } from './src/config.js';
 import { serializeChargersStore, upsertCharger, removeCharger } from './src/chargers.js';
 import { buildDiscoveredDevices, findBlueprintByDevice } from './src/devices/index.js';
-import { ensureGatewayRunning, syncChargerMap, fetchGatewayState } from './src/gatewayClient.js';
+import { ensureGatewayRunning, syncChargerMap } from './src/gatewayClient.js';
 
 /**
  * Wires every SDK handler onto `gladys` - deliberately does NOT call
@@ -100,14 +103,12 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
    * Configuration for integrations with an `oauth2` config field, which
    * this manifest doesn't have): the ready-to-use OCPP URL to point charge
    * points at (host part templated - we only know the assigned port, not
-   * this Gladys host's own LAN address), how many charge points are
-   * configured, and which identities have been seen connecting without
-   * being configured yet ("pending" - a typo-diagnostic fallback, see
-   * docs/en.md - not the intended discovery flow). Each individual charge
-   * point's configured origin cloud URL is NOT listed here - it's shown on
-   * that charge point's own device card instead (Discovery, then the
-   * device list - see src/devices/charger.js's `params`), which is a
-   * better fit than this single-line, ops-flavored status caption.
+   * this Gladys host's own LAN address) and how many charge points are
+   * configured. Which charge points exist at all - configured or merely
+   * auto-detected by the gateway's "local mode" - is NOT summarized here:
+   * it's shown directly in Discovery (see src/devices/charger.js), and each
+   * one's configured origin cloud URL on its own device card (`params`) -
+   * both a better fit than this single-line, ops-flavored status caption.
    */
   async function reconcileGateway() {
     try {
@@ -115,14 +116,6 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
       await withGatewayRetries(() => syncChargerMap(config.chargers, gatewayBaseUrl));
 
       const configuredCount = Object.keys(config.chargers).length;
-      let pendingIdentities = [];
-      try {
-        const state = await fetchGatewayState(gatewayBaseUrl);
-        pendingIdentities = state.pending.map((p) => p.identity);
-      } catch (err) {
-        logger.warn('Unable to fetch the gateway state for the status message', err);
-      }
-
       const en = [
         hostPort
           ? `OCPP URL: ws://<this Gladys host's LAN address>:${hostPort}/ - enter this in each charge point's vendor app.`
@@ -135,10 +128,6 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
           : 'Relais actif, port hôte pas encore assigné.',
         `${configuredCount} borne(s) configurée(s).`,
       ];
-      if (pendingIdentities.length > 0) {
-        en.push(`Detected, awaiting configuration: ${pendingIdentities.join(', ')}.`);
-        fr.push(`Détectée(s), en attente de configuration : ${pendingIdentities.join(', ')}.`);
-      }
 
       await gladys.setConnectionStatus(true, { en: en.join(' '), fr: fr.join(' ') });
     } catch (err) {
@@ -216,8 +205,8 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
     return originCloudUrl === ''
       ? { en: `Charge point "${identity}" removed.`, fr: `Borne "${identity}" retirée.` }
       : {
-          en: `Charge point "${identity}" configured. Check the Discovery tab to add it as a device - its origin cloud URL is shown there.`,
-          fr: `Borne "${identity}" configurée. Consultez l'onglet Découverte pour l'ajouter comme appareil - son URL de cloud d'origine y est affichée.`,
+          en: `Charge point "${identity}" configured. If it's already connected, it will automatically reconnect within a few seconds and start relaying to its origin cloud - check the Discovery tab to add it as a device, its origin cloud URL is shown there.`,
+          fr: `Borne "${identity}" configurée. Si elle est déjà connectée, elle se reconnectera automatiquement dans les secondes qui suivent et commencera à être relayée vers son cloud d'origine - consultez l'onglet Découverte pour l'ajouter comme appareil, son URL de cloud d'origine y est affichée.`,
         };
   });
 

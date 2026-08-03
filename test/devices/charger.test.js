@@ -264,6 +264,28 @@ test('buildDevices: a configured charge point that has never connected is offere
   ]);
 });
 
+test('buildDevices: an identity only known to the gateway (auto-detected, never configured) still gets a device', async () => {
+  const gladys = createFakeGladys();
+  const fetchState = async () => ({
+    chargers: {
+      'CP-AUTO-DETECTED': {
+        identity: 'CP-AUTO-DETECTED',
+        connectors: { 1: { status: 'Available' } },
+      },
+    },
+  });
+
+  // No config.chargers entry at all - normalizeConfig() with no chargers_json.
+  const devices = await charger.buildDevices(gladys, normalizeConfig(), fetchState);
+  assert.deepEqual(
+    devices.map((d) => d.external_id),
+    ['ev-charger:CP-AUTO-DETECTED'],
+  );
+  assert.deepEqual(devices[0].params, [
+    { name: 'Origin cloud URL', value: 'Not yet configured - run the "Add a charge point" action' },
+  ]);
+});
+
 test('onPoll: publishes states for the matching charge point, all its connectors', async () => {
   const gladys = createFakeGladys();
   const device = { external_id: 'ev-charger:CP-1' };
@@ -296,6 +318,25 @@ test('onPoll: only publishes for the targeted device, not other configured charg
   await charger.onPoll(gladys, multiConfig, device, fetchState);
   assert.ok(gladys.published.every((p) => !p.featureExternalId.includes('CP-B')));
   assert.ok(gladys.published.some((p) => p.featureExternalId.includes('CP-A') && p.state === 100));
+});
+
+test('onPoll: resolves and publishes for a device whose identity was never configured (auto-detected only)', async () => {
+  const gladys = createFakeGladys();
+  const device = { external_id: 'ev-charger:CP-AUTO-DETECTED' };
+  const fetchState = async () => ({
+    chargers: {
+      'CP-AUTO-DETECTED': {
+        identity: 'CP-AUTO-DETECTED',
+        connectors: { 1: { status: 'Charging', voltageV: 42 } },
+      },
+    },
+  });
+
+  // normalizeConfig() with no chargers_json - nothing configured.
+  await charger.onPoll(gladys, normalizeConfig(), device, fetchState);
+  assert.ok(
+    gladys.published.some((p) => p.featureExternalId.endsWith(':voltage:1') && p.state === 42),
+  );
 });
 
 test('onPoll: does nothing when the charge point reports no connector', async () => {

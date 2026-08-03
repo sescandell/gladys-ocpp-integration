@@ -10,15 +10,18 @@
 // process, no risk to the charge point<->origin cloud relay running in the
 // sub-container.
 //
-// ONE Gladys device PER CONFIGURED CHARGE POINT (not per connector): a
-// charge point is something the user explicitly declared via the
-// `add_charger` action, so it is offered in Discovery as soon as it is
-// configured - it does not need to have connected yet. This matches the
-// official discovery contract ("your integration never creates or deletes
-// devices, it publishes the devices it discovers, and the user decides
-// which ones to create" - gladysassistant.com/docs/dev/external-integrations)
-// and mirrors how a cloud/account-based integration lists devices from its
-// own registry, online or not.
+// ONE Gladys device PER CHARGE POINT (not per connector), whether it's
+// already configured (`config.chargers`) OR merely auto-detected by the
+// gateway (connected once, no origin cloud set yet - see the gateway's
+// "local mode", gateway/src/gateway.ts). A charge point shows up here the
+// moment either is true - this matches the official discovery contract
+// ("your integration never creates or deletes devices, it publishes the
+// devices it discovers, and the user decides which ones to create" -
+// gladysassistant.com/docs/dev/external-integrations) and mirrors how a
+// cloud/account-based integration lists devices from its own registry,
+// online or not. The `add_charger` action is only needed to attach an
+// origin cloud URL (and switch the gateway into full relay mode for that
+// charge point) - not to make it appear here at all.
 //
 // A charge point can have several physical connectors: each one becomes a
 // small group of features on the SAME device (`Connector <n> - <label>`),
@@ -238,6 +241,8 @@ function observedConnectorIds(chargeState) {
     .sort((a, b) => a - b);
 }
 
+const NOT_YET_CONFIGURED = 'Not yet configured - run the "Add a charge point" action';
+
 function buildChargerDevice(gladys, identity, originCloudUrl, chargeState) {
   const ids = gladys.externalIds(DEVICE_TYPE, identity);
   const observed = observedConnectorIds(chargeState);
@@ -251,10 +256,25 @@ function buildChargerDevice(gladys, identity, originCloudUrl, chargeState) {
     // read-only table, silently kept in sync on every re-publish (no
     // "Update" click needed, unlike a `features` structure change). This is
     // the direct answer to "where can I see which cloud a charger is
-    // relaying to": right on that charger, not a list somewhere else.
-    params: [{ name: 'Origin cloud URL', value: originCloudUrl }],
+    // relaying to": right on that charger, not a list somewhere else. Until
+    // the `add_charger` action sets one, the charge point is still fully
+    // supervised locally (see the gateway's "local mode") - just not yet
+    // relayed anywhere.
+    params: [{ name: 'Origin cloud URL', value: originCloudUrl ?? NOT_YET_CONFIGURED }],
     features: connectorIds.flatMap((connectorId) => buildConnectorFeatures(ids, connectorId)),
   };
+}
+
+/**
+ * Every identity worth offering a device for: configured (`config.chargers`)
+ * UNION auto-detected by the gateway (`allChargers`, the gateway's full
+ * observed-state map - includes charge points connected in "local mode",
+ * not just relayed ones). Neither set alone is enough: a charge point can be
+ * configured but briefly unreachable (gateway restarting), or detected but
+ * not yet configured at all.
+ */
+function knownIdentities(config, allChargers) {
+  return [...new Set([...Object.keys(config.chargers ?? {}), ...Object.keys(allChargers ?? {})])];
 }
 
 export const charger = {
@@ -267,43 +287,39 @@ export const charger = {
   },
 
   /**
-   * Builds one device per configured charge point (`config.chargers`, see
-   * ../chargers.js) - independent of whether the gateway has ever seen it
-   * connect. When it HAS connected and reported connectors, those drive the
-   * device's feature set; otherwise connector 1 is seeded by default (see
-   * module doc comment). Returns an empty array only when nothing is
-   * configured at all.
+   * Builds one device per identity in `knownIdentities()` - configured
+   * (`config.chargers`, see ../chargers.js) union auto-detected by the
+   * gateway. When a charge point HAS connected and reported connectors,
+   * those drive the device's feature set; otherwise connector 1 is seeded
+   * by default (see module doc comment). Returns an empty array only when
+   * nothing is configured AND nothing has ever been detected.
    *
    * `fetchState` defaults to the real gateway HTTP call; overridable so
    * tests can exercise this without a live gateway sub-container (see
    * test/devices/charger.test.js).
    */
   async buildDevices(gladys, config, fetchState = fetchGatewayState) {
-    const identities = Object.keys(config.chargers ?? {});
-    if (identities.length === 0) return [];
-
     let allChargers = {};
     try {
       ({ chargers: allChargers } = await fetchState());
     } catch (err) {
-      logger.warn(
-        'Gateway unreachable, offering configured charge points with their default connector only',
-        err,
-      );
+      logger.warn('Gateway unreachable, offering configured charge points only', err);
     }
 
+    const identities = knownIdentities(config, allChargers);
+    if (identities.length === 0) return [];
+
     return identities.map((identity) =>
-      buildChargerDevice(gladys, identity, config.chargers[identity], allChargers?.[identity]),
+      buildChargerDevice(
+        gladys,
+        identity,
+        config.chargers?.[identity] ?? null,
+        allChargers?.[identity],
+      ),
     );
   },
 
   async onPoll(gladys, config, device, fetchState = fetchGatewayState) {
-    const identities = Object.keys(config.chargers ?? {});
-    const identity = identities.find(
-      (candidate) => gladys.externalIds(DEVICE_TYPE, candidate).device === device.external_id,
-    );
-    if (!identity) return; // not (or no longer) a configured charge point
-
     let allChargers;
     try {
       ({ chargers: allChargers } = await fetchState());
@@ -315,8 +331,13 @@ export const charger = {
       return;
     }
 
+    const identity = knownIdentities(config, allChargers).find(
+      (candidate) => gladys.externalIds(DEVICE_TYPE, candidate).device === device.external_id,
+    );
+    if (!identity) return; // not (or no longer) a known charge point
+
     const chargeState = allChargers?.[identity];
-    if (!chargeState) return; // configured, but never seen connecting yet
+    if (!chargeState) return; // known, but no observed connector state yet
 
     const ids = gladys.externalIds(DEVICE_TYPE, identity);
     const states = observedConnectorIds(chargeState).flatMap((connectorId) =>
