@@ -36,7 +36,11 @@ import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
 import { normalizeConfig } from './src/config.js';
 import { serializeChargersStore, upsertCharger, removeCharger } from './src/chargers.js';
 import { buildDiscoveredDevices, findBlueprintByDevice } from './src/devices/index.js';
-import { ensureGatewayRunning, syncChargerMap } from './src/gatewayClient.js';
+import {
+  ensureGatewayRunning,
+  syncChargerMap,
+  GATEWAY_SUB_CONTAINER_NAME,
+} from './src/gatewayClient.js';
 
 /**
  * Wires every SDK handler onto `gladys` - deliberately does NOT call
@@ -208,6 +212,37 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
           en: `Charge point "${identity}" configured. If it's already connected, it will automatically reconnect within a few seconds and start relaying to its origin cloud - check the Discovery tab to add it as a device, its origin cloud URL is shown there.`,
           fr: `Borne "${identity}" configurée. Si elle est déjà connectée, elle se reconnectera automatiquement dans les secondes qui suivent et commencera à être relayée vers son cloud d'origine - consultez l'onglet Découverte pour l'ajouter comme appareil, son URL de cloud d'origine y est affichée.`,
         };
+  });
+
+  // --- Manifest action: debug reset -------------------------------------------
+  // Clears every configured charge point and restarts the "gateway" sub-
+  // container, which wipes ALL of its in-memory state at once (StateStore,
+  // ChargerRegistry, localClients - see gateway/src/gateway.ts) - the only
+  // way to drop a live RELAY-mode connection too, since (unlike local-mode
+  // ones) those aren't tracked in any identity-keyed map the state API could
+  // force-close individually. Every connected charge point, configured or
+  // not, has to reconnect afterwards - it then shows up again exactly as it
+  // would on first contact (local mode, or relay mode if still configured
+  // once this action's own config wipe below has been undone by re-running
+  // "Add a charge point"). This can NOT remove devices already created in
+  // Gladys: the SDK exposes no device-deletion call (see `onDeviceDeleted`,
+  // the other direction) - remove those manually from the device list.
+  gladys.onAction('reset_all', async (fields) => {
+    if (String(fields.confirm ?? '').trim() !== 'RESET') {
+      throw new Error('Type RESET (uppercase) in the confirmation field to proceed.');
+    }
+
+    await gladys.setConfig(serializeChargersStore({}));
+    config = { ...normalizeConfig(await gladys.getConfig()), chargers: {} };
+
+    await gladys.restartContainer(GATEWAY_SUB_CONTAINER_NAME);
+    await reconcileGateway();
+    await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+
+    return {
+      en: 'Gateway state cleared and every charge point unconfigured. Connected charge points will reconnect automatically within a few seconds and reappear in Discovery. Devices already added to Gladys were NOT removed - delete those manually if you no longer want them.',
+      fr: "État du relais réinitialisé et toutes les bornes déconfigurées. Les bornes connectées se reconnecteront automatiquement dans les secondes qui suivent et réapparaîtront dans Découverte. Les appareils déjà ajoutés à Gladys n'ont PAS été supprimés - retirez-les manuellement si vous n'en voulez plus.",
+    };
   });
 
   // --- Connection lifecycle ----------------------------------------------------

@@ -77,6 +77,22 @@ it back into local-only supervision, run the action with its identity and
 an **empty** URL — takes effect the next time that charge point reconnects
 (it keeps relaying through its current connection until then).
 
+## Starting over (debug)
+
+Uninstalling and reinstalling the integration is the clean way to start
+completely fresh: it removes every device it created, its stored
+configuration, and the relay's own container and data — nothing is left
+behind.
+
+To reset without a full reinstall (e.g. while testing), run the **"Reset
+everything (debug)"** action (Configuration screen, type `RESET` to
+confirm). It clears every configured charge point and restarts the relay
+container, wiping its observed state (connectors, live transactions,
+history) — every charge point, configured or not, has to reconnect
+afterwards and reappears in Discovery as it did the first time. It does
+**not** delete devices you already created in Gladys — remove those
+manually from the device list if you no longer want them.
+
 ## Multiple connectors
 
 A charge point is one device in Gladys, whatever its number of physical

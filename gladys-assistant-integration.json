@@ -59,6 +59,29 @@
           "required": false
         }
       ]
+    },
+    {
+      "key": "reset_all",
+      "label": {
+        "en": "Reset everything (debug)",
+        "fr": "Tout réinitialiser (debug)"
+      },
+      "description": {
+        "en": "Debug tool: clears every configured charge point (identity + origin cloud URL) and restarts the gateway sub-container, wiping all of its observed state (connectors, live transactions, history) and dropping every live OCPP connection - configured charge points included, they will need to reconnect. This does NOT delete devices already added to Gladys: remove those manually from the device list if you no longer want them. Type RESET in the field below to confirm.",
+        "fr": "Outil de debug : efface toutes les bornes configurées (identity + URL de cloud d'origine) et redémarre le sous-conteneur du relais, ce qui vide tout son état observé (connecteurs, transactions en cours, historique) et coupe toutes les connexions OCPP en cours - y compris les bornes configurées, qui devront se reconnecter. Cela ne supprime PAS les appareils déjà ajoutés à Gladys : retirez-les manuellement de la liste des appareils si vous n'en voulez plus. Tapez RESET dans le champ ci-dessous pour confirmer."
+      },
+      "timeout_seconds": 30,
+      "fields": [
+        {
+          "key": "confirm",
+          "type": "string",
+          "label": {
+            "en": "Type RESET to confirm",
+            "fr": "Tapez RESET pour confirmer"
+          },
+          "required": true
+        }
+      ]
     }
   ],
   "containers": [

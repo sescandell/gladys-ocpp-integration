@@ -45,7 +45,7 @@ Charge point A ─┐                     Charge point B ─┐
 
 ```
 .
-├─ index.js                          # SDK bootstrap, gateway lifecycle, add_charger action
+├─ index.js                          # SDK bootstrap, gateway lifecycle, add_charger/reset_all actions
 ├─ src/
 │  ├─ config.js                      # config defaults + normalization (folds in `chargers`)
 │  ├─ chargers.js                    # free-config charger store: parse/serialize/upsert/remove
@@ -69,7 +69,7 @@ Charge point A ─┐                     Charge point B ─┐
 │  └─ Dockerfile                     #   sub-container image
 ├─ docs/
 │  ├─ en.md / fr.md                  # user documentation (re-hosted by Gladys)
-├─ gladys-assistant-integration.json # manifest (config_schema + add_charger action + "gateway" sub-container)
+├─ gladys-assistant-integration.json # manifest (config_schema + add_charger/reset_all actions + "gateway" sub-container)
 ├─ Dockerfile                        # main container image, Node 24 Alpine, read-only rootfs
 ├─ .github/workflows/                # CI: builds + publishes BOTH images (main + gateway)
 └─ cover.png                         # catalog cover, 800×534 px, ≤150 KB
@@ -98,6 +98,18 @@ since `ocpp-rpc` exposes no identity-keyed lookup of its own connections) -
 it reconnects and this time resolves to full relay mode. Removing a charge
 point's URL takes effect on its next reconnection, not retroactively (an
 already-relaying session isn't interrupted).
+
+A separate `reset_all` action (confirmation-gated, "type RESET") clears
+`chargers_json` entirely and calls `gladys.restartContainer('gateway')` -
+the only way to drop a live RELAY-mode connection too (unlike local-mode
+ones, those aren't tracked in any identity-keyed map `stateApi.ts` could
+force-close individually), giving every charge point a clean local-mode
+re-detection on reconnect. It cannot delete devices already created in
+Gladys - the SDK has no such call - uninstalling/reinstalling the
+integration is the actual full reset (it removes devices, config, and the
+sub-container's own data, verified in Gladys core's
+`externalIntegration.uninstall.js`); `reset_all` exists for iterating
+without that round-trip.
 
 `src/devices/charger.js`'s `buildDevices()` offers ONE Gladys device per
 identity in the union of `config.chargers` (configured) and the gateway's

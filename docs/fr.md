@@ -86,6 +86,23 @@ avec son identity et une URL **vide** — prend effet à la prochaine
 reconnexion de cette borne (elle continue d'être relayée via sa connexion
 en cours jusque-là).
 
+## Repartir de zéro (debug)
+
+Désinstaller puis réinstaller l'intégration est la façon propre de tout
+remettre à zéro : cela supprime chaque appareil qu'elle a créé, sa
+configuration stockée, ainsi que le conteneur et les données du relais —
+rien n'est laissé derrière.
+
+Pour réinitialiser sans passer par une réinstallation complète (par exemple
+pendant des tests), lancez l'action **"Tout réinitialiser (debug)"** (écran
+Configuration, tapez `RESET` pour confirmer). Elle efface toutes les bornes
+configurées et redémarre le conteneur du relais, ce qui vide son état
+observé (connecteurs, transactions en cours, historique) — chaque borne,
+configurée ou non, doit alors se reconnecter et réapparaît dans Découverte
+comme lors de sa première connexion. Elle ne supprime **pas** les appareils
+déjà créés dans Gladys — retirez-les manuellement de la liste des appareils
+si vous n'en voulez plus.
+
 ## Connecteurs multiples
 
 Une borne est un seul appareil dans Gladys, quel que soit son nombre de

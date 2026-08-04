@@ -55,9 +55,19 @@ test('top-level shape', () => {
   assert.ok(manifest.docker_image.length > 0);
 });
 
-test('V1 is read-only: the only action manages charge point configuration, never controls a device', () => {
-  assert.equal(manifest.actions?.length, 1);
-  assert.equal(manifest.actions[0].key, 'add_charger');
+test('V1 is read-only: actions only manage charge point configuration and gateway state, never control a device', () => {
+  assert.deepEqual(
+    manifest.actions?.map((a) => a.key),
+    ['add_charger', 'reset_all'],
+  );
+});
+
+test('reset_all action: requires a confirmation field', () => {
+  const action = manifest.actions.find((a) => a.key === 'reset_all');
+  assert.ok(action, 'reset_all must be declared');
+  const confirmField = action.fields.find((f) => f.key === 'confirm');
+  assert.ok(confirmField, 'confirm field must be declared');
+  assert.equal(confirmField.required, true);
 });
 
 test('config_schema only has the intro section - no fixed per-charger fields, no other user-editable field', () => {

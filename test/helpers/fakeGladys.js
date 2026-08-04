@@ -30,6 +30,7 @@ export function createFakeGladys(options = {}) {
   const discoveredDevices = [];
   const connectionStatuses = [];
   const startContainerCalls = [];
+  const restartContainerCalls = [];
   const setConfigCalls = [];
   let containers = options.containers ?? [];
   let config = options.config ?? {};
@@ -50,6 +51,7 @@ export function createFakeGladys(options = {}) {
     discoveredDevices,
     connectionStatuses,
     startContainerCalls,
+    restartContainerCalls,
     setConfigCalls,
     handlers,
 
@@ -107,6 +109,15 @@ export function createFakeGladys(options = {}) {
             }
           : c,
       );
+      return { success: true };
+    },
+
+    // Real supervisor contract (see index.js's reset_all action doc comment):
+    // always restarts the container, keeping its already-assigned host port -
+    // unlike startContainer, no "already running" guard here.
+    async restartContainer(name) {
+      restartContainerCalls.push({ name });
+      containers = containers.map((c) => (c.name === name ? { ...c, status: 'running' } : c));
       return { success: true };
     },
 
