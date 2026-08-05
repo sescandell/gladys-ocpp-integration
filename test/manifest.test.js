@@ -84,13 +84,22 @@ test('config_schema only has the intro section - no fixed per-charger fields, no
   );
 });
 
-test('add_charger action: identity required, origin_cloud_url optional (empty = remove)', () => {
+test('add_charger action: device picker required, origin_cloud_url optional (empty = detach)', () => {
   const action = manifest.actions.find((a) => a.key === 'add_charger');
   assert.ok(action, 'add_charger must be declared');
-  const identityField = action.fields.find((f) => f.key === 'identity');
+  const deviceField = action.fields.find((f) => f.key === 'device');
   const urlField = action.fields.find((f) => f.key === 'origin_cloud_url');
-  assert.ok(identityField, 'identity field must be declared');
-  assert.equal(identityField.required, true);
+
+  // A `select` whose options Gladys itself fills in with the integration's
+  // own devices - so the user picks a charge point instead of retyping its
+  // exact OCPP identity. `source` and `options` are mutually exclusive
+  // (Gladys core's validateManifest), declaring both rejects the manifest.
+  assert.ok(deviceField, 'device field must be declared');
+  assert.equal(deviceField.type, 'select');
+  assert.equal(deviceField.source, 'devices');
+  assert.equal(deviceField.options, undefined);
+  assert.equal(deviceField.required, true);
+
   assert.ok(urlField, 'origin_cloud_url field must be declared');
   assert.equal(urlField.required, false);
 });

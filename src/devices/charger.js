@@ -277,13 +277,28 @@ function knownIdentities(config, allChargers) {
   return [...new Set([...Object.keys(config.chargers ?? {}), ...Object.keys(allChargers ?? {})])];
 }
 
+/**
+ * Reverses `gladys.externalIds(DEVICE_TYPE, identity).device` - i.e. maps
+ * `ext:<selector>:ev-charger:<identity>` back to `<identity>`. Needed because
+ * the `add_charger` action's charge point picker is a `select` with
+ * `source: "devices"`, and Gladys populates such a select with each device's
+ * `external_id` as the option VALUE (front's `loadDynamicOptions`) - so the
+ * action handler receives an external_id where the rest of this code works in
+ * OCPP identities.
+ * @returns {string|null} the identity, or null if `externalId` isn't one of
+ *   this blueprint's devices (the caller decides how to report that).
+ */
+export function identityFromDeviceExternalId(gladys, externalId) {
+  const prefix = gladys.externalIds(DEVICE_TYPE, '').device;
+  return externalId.startsWith(prefix) ? externalId.slice(prefix.length) : null;
+}
+
 export const charger = {
   key: DEVICE_TYPE,
 
   /** Prefix-based ownership check: one device per configured identity. */
   ownsDevice(gladys, externalId) {
-    const prefix = gladys.externalIds(DEVICE_TYPE, '').device;
-    return externalId.startsWith(prefix);
+    return identityFromDeviceExternalId(gladys, externalId) !== null;
   },
 
   /**

@@ -36,6 +36,7 @@ import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
 import { normalizeConfig } from './src/config.js';
 import { serializeChargersStore, upsertCharger, removeCharger } from './src/chargers.js';
 import { buildDiscoveredDevices, findBlueprintByDevice } from './src/devices/index.js';
+import { identityFromDeviceExternalId } from './src/devices/charger.js';
 import {
   ensureGatewayRunning,
   syncChargerMap,
@@ -172,14 +173,28 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
   });
 
   // --- Manifest action: add (or remove) one charge point -----------------------
-  // Fields: `identity` (required), `origin_cloud_url` (empty = remove). Runs
+  // Fields: `device` (required), `origin_cloud_url` (empty = remove). Runs
   // independently of the config-form save flow, so it re-fetches the config
   // fresh to merge against the latest saved charger set rather than risking a
   // stale in-memory copy.
+  //
+  // `device` is a `select` with `source: "devices"`: Gladys itself populates
+  // the dropdown, and the value it hands back is the device's EXTERNAL_ID,
+  // not the OCPP identity everything else here works in - hence the
+  // translation below. This spares the user retyping an exact identity
+  // string, at the cost of an ordering requirement Gladys imposes: such a
+  // select only lists devices ALREADY ADDED to Gladys (the core endpoint
+  // behind it reads t_device; merely-discovered devices live in an in-memory
+  // map it never queries), so a charge point must be created from Discovery
+  // before it can be given an origin cloud URL here.
   gladys.onAction('add_charger', async (fields) => {
-    const identity = String(fields.identity ?? '').trim();
+    const deviceExternalId = String(fields.device ?? '').trim();
+    if (!deviceExternalId) {
+      throw new Error('Select a charge point.');
+    }
+    const identity = identityFromDeviceExternalId(gladys, deviceExternalId);
     if (!identity) {
-      throw new Error('Charge point identity is required.');
+      throw new Error(`Not one of this integration's charge points: ${deviceExternalId}`);
     }
     const originCloudUrl = String(fields.origin_cloud_url ?? '').trim();
 
@@ -207,10 +222,13 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
     await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
 
     return originCloudUrl === ''
-      ? { en: `Charge point "${identity}" removed.`, fr: `Borne "${identity}" retirée.` }
+      ? {
+          en: `Charge point "${identity}" detached from its origin cloud - back to local-only supervision.`,
+          fr: `Borne "${identity}" détachée de son cloud d'origine - retour en supervision locale uniquement.`,
+        }
       : {
-          en: `Charge point "${identity}" configured. If it's already connected, it will automatically reconnect within a few seconds and start relaying to its origin cloud - check the Discovery tab to add it as a device, its origin cloud URL is shown there.`,
-          fr: `Borne "${identity}" configurée. Si elle est déjà connectée, elle se reconnectera automatiquement dans les secondes qui suivent et commencera à être relayée vers son cloud d'origine - consultez l'onglet Découverte pour l'ajouter comme appareil, son URL de cloud d'origine y est affichée.`,
+          en: `Charge point "${identity}" configured. If it's already connected, it will automatically reconnect within a few seconds and start relaying to its origin cloud - the configured URL is shown on its device card.`,
+          fr: `Borne "${identity}" configurée. Si elle est déjà connectée, elle se reconnectera automatiquement dans les secondes qui suivent et commencera à être relayée vers son cloud d'origine - l'URL configurée est affichée sur sa fiche appareil.`,
         };
   });
 

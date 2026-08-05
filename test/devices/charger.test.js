@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFakeGladys } from '../helpers/fakeGladys.js';
-import { charger, mapConnectorToStates } from '../../src/devices/charger.js';
+import {
+  charger,
+  mapConnectorToStates,
+  identityFromDeviceExternalId,
+} from '../../src/devices/charger.js';
 import { normalizeConfig } from '../../src/config.js';
 import { serializeChargersStore } from '../../src/chargers.js';
 
@@ -97,6 +101,31 @@ test('ownsDevice: true for a charger device of this integration, false otherwise
   const gladys = createFakeGladys();
   assert.equal(charger.ownsDevice(gladys, 'ev-charger:CP-1'), true);
   assert.equal(charger.ownsDevice(gladys, 'some-other-device:xyz'), false);
+});
+
+test('identityFromDeviceExternalId: recovers the OCPP identity from a device external_id', () => {
+  const gladys = createFakeGladys();
+  // Exactly the round trip the add_charger action relies on: Gladys's
+  // `source: "devices"` select hands back an external_id, everything else
+  // works in OCPP identities.
+  const externalId = gladys.externalIds('ev-charger', 'CP-1').device;
+  assert.equal(identityFromDeviceExternalId(gladys, externalId), 'CP-1');
+});
+
+test('identityFromDeviceExternalId: an identity containing separators survives the round trip', () => {
+  const gladys = createFakeGladys();
+  // Real chargers use serial-number-ish identities; nothing guarantees they
+  // avoid the ":" this scheme uses as a separator, and slicing by prefix
+  // length (rather than splitting) is what makes that safe.
+  const identity = 'CP:1:with:colons';
+  const externalId = gladys.externalIds('ev-charger', identity).device;
+  assert.equal(identityFromDeviceExternalId(gladys, externalId), identity);
+});
+
+test('identityFromDeviceExternalId: null for a device that is not one of this blueprint', () => {
+  const gladys = createFakeGladys();
+  assert.equal(identityFromDeviceExternalId(gladys, 'thermostat:XYZ'), null);
+  assert.equal(identityFromDeviceExternalId(gladys, ''), null);
 });
 
 function configWithChargers(chargers) {

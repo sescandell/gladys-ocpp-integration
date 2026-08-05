@@ -38,9 +38,11 @@ you ever want to stop using this integration for that charger.
 
 ## Setup
 
-No required order: point a charge point at the relay whenever you like,
-before or after configuring it. It shows up in Discovery the moment it
-connects, whether or not it has an origin cloud yet.
+A charge point doesn't need any configuration to connect: point it at the
+relay whenever you like and it shows up in Discovery straight away, already
+supervised. Attaching its origin cloud comes later, and does require the
+charge point to have been added to Gladys first (step 4 below) — that's how
+the picker in the action gets its list.
 
 1. Install the integration — its relay starts automatically, no
    configuration needed yet.
@@ -50,32 +52,36 @@ address>:<port>/` — the port is already filled in for you, just replace
    the placeholder with this Gladys host's actual LAN address. This URL is
    the **same for every charge point**.
 3. In the charge point's vendor app, point its OCPP server URL there. It
-   connects right away and shows up in the **Discovery** tab, ready to be
-   created as a device — its real status (plugged, charging, etc.) is
-   already supervised even though it isn't relayed to any cloud yet.
-4. Whenever you're ready to route it to its real cloud instead: find the
-   charge point's **identity** (sometimes called serial number or charge
-   point ID — shown on its Discovery/device card, in its vendor app, or on a
-   label on the charger) and run the **"Add a charge point"** action
-   (Configuration screen) with that identity and the **origin cloud URL**
-   exactly as shown by the vendor app — including any trailing query string
-   some vendors use (e.g. ending in `?sn=`). Any such quirk only concerns
-   the relay's outbound connection to that vendor's cloud — it is invisible
-   to the charge point itself. The charge point reconnects automatically
-   within a few seconds and starts relaying instead of just being
-   supervised locally. Its configured origin cloud URL is then shown right
-   on its card (Discovery, then the device once created) — that's the only
-   place to check it, there is no list of configured charge points anywhere
-   else.
-5. Repeat step 4 for every other charge point you want relayed — same URL,
-   its own identity, its own origin cloud URL, even a different vendor.
+   connects right away and shows up in the **Discovery** tab — its real
+   status (plugged, charging, etc.) is already supervised even though it
+   isn't relayed to any cloud yet.
+4. **Add it to Gladys** from the Discovery tab. Beyond creating the device,
+   this is what puts the charge point in the picker used by the next step.
+5. Whenever you're ready to route it to its real cloud instead: run the
+   **"Add a charge point"** action (Configuration screen), **pick the charge
+   point from the list**, and enter the **origin cloud URL** exactly as
+   shown by the vendor app — including any trailing query string some
+   vendors use (e.g. ending in `?sn=`). Any such quirk only concerns the
+   relay's outbound connection to that vendor's cloud — it is invisible to
+   the charge point itself. The charge point reconnects automatically within
+   a few seconds and starts relaying instead of just being supervised
+   locally. Its configured origin cloud URL is then shown right on its device
+   card — that's the only place to check it, there is no list of configured
+   charge points anywhere else.
+6. Repeat for every other charge point you want relayed — same URL, its own
+   origin cloud URL, even a different vendor.
 
 To fix a mistake or change a charge point's origin cloud URL, run the action
-again with the same identity and the corrected URL (check its current URL
-on its device card first). To detach a charge point from its cloud and put
-it back into local-only supervision, run the action with its identity and
-an **empty** URL — takes effect the next time that charge point reconnects
-(it keeps relaying through its current connection until then).
+again for the same charge point with the corrected URL (check its current
+URL on its device card first). To detach a charge point from its cloud and
+put it back into local-only supervision, run the action for it with an
+**empty** URL — takes effect the next time that charge point reconnects (it
+keeps relaying through its current connection until then).
+
+If you **delete** a charge point's device from Gladys while it still has an
+origin cloud configured, it disappears from the picker and the action can no
+longer change it — the relay keeps using that cloud. Add the device back
+from Discovery to regain control of it, or use the reset below.
 
 ## Starting over (debug)
 

@@ -43,9 +43,11 @@ cette intégration.
 
 ## Installation
 
-Aucun ordre requis : pointez une borne vers le relais quand vous voulez,
-avant ou après l'avoir configurée. Elle apparaît dans Découverte dès qu'elle
-se connecte, qu'elle ait ou non un cloud d'origine.
+Une borne n'a besoin d'aucune configuration pour se connecter : pointez-la
+vers le relais quand vous voulez, elle apparaît aussitôt dans Découverte,
+déjà supervisée. L'association de son cloud d'origine vient ensuite, et
+nécessite que la borne ait d'abord été ajoutée à Gladys (étape 4
+ci-dessous) — c'est ainsi que la liste déroulante de l'action se remplit.
 
 1. Installez l'intégration — son relais démarre automatiquement, aucune
    configuration n'est nécessaire pour l'instant.
@@ -56,35 +58,39 @@ Gladys>:<port>/` — le port est déjà rempli pour vous, il ne reste qu'à
    Cette URL est **la même pour toutes les bornes**.
 3. Dans l'application de la borne, faites pointer son URL de serveur OCPP
    vers cette adresse. Elle se connecte tout de suite et apparaît dans
-   l'onglet **Découverte**, prête à être créée comme appareil — son statut
-   réel (branchée, en charge, etc.) est déjà supervisé même si elle n'est
-   pas encore relayée vers un cloud.
-4. Quand vous êtes prêt à la router vers son vrai cloud : trouvez
-   l'**identity** de la borne (parfois appelée numéro de série ou
-   identifiant de la borne — visible sur sa fiche Découverte/appareil, dans
-   son application fabricant, ou sur une étiquette de la borne) et lancez
-   l'action **"Ajouter une borne"** (écran Configuration) avec cette
-   identity et l'**URL du cloud d'origine** telle qu'affichée par
-   l'application de cette borne — y compris une éventuelle chaîne de requête
-   finale que certains fabricants utilisent (ex. se terminant par `?sn=`).
-   Une telle astuce ne concerne que la connexion sortante du relais vers le
-   cloud de ce fabricant — elle est invisible pour la borne elle-même. La
-   borne se reconnecte automatiquement en quelques secondes et commence à
-   être relayée au lieu d'être simplement supervisée localement. Son URL de
-   cloud d'origine configurée est alors affichée directement sur sa fiche
-   (Découverte, puis l'appareil une fois créé) — c'est le seul endroit pour
-   la consulter, il n'existe aucune liste des bornes configurées ailleurs.
-5. Répétez l'étape 4 pour chaque autre borne à relayer — même URL, sa propre
-   identity, sa propre URL de cloud d'origine, même d'un fabricant
-   différent.
+   l'onglet **Découverte** — son statut réel (branchée, en charge, etc.) est
+   déjà supervisé même si elle n'est pas encore relayée vers un cloud.
+4. **Ajoutez-la à Gladys** depuis l'onglet Découverte. Au-delà de créer
+   l'appareil, c'est ce qui fait entrer la borne dans la liste déroulante
+   utilisée à l'étape suivante.
+5. Quand vous êtes prêt à la router vers son vrai cloud : lancez l'action
+   **"Ajouter une borne"** (écran Configuration), **choisissez la borne dans
+   la liste**, et saisissez l'**URL du cloud d'origine** telle qu'affichée
+   par l'application de cette borne — y compris une éventuelle chaîne de
+   requête finale que certains fabricants utilisent (ex. se terminant par
+   `?sn=`). Une telle astuce ne concerne que la connexion sortante du relais
+   vers le cloud de ce fabricant — elle est invisible pour la borne
+   elle-même. La borne se reconnecte automatiquement en quelques secondes et
+   commence à être relayée au lieu d'être simplement supervisée localement.
+   Son URL de cloud d'origine configurée est alors affichée directement sur
+   sa fiche appareil — c'est le seul endroit pour la consulter, il n'existe
+   aucune liste des bornes configurées ailleurs.
+6. Répétez pour chaque autre borne à relayer — même URL, sa propre URL de
+   cloud d'origine, même d'un fabricant différent.
 
 Pour corriger une erreur ou changer l'URL du cloud d'origine d'une borne,
-relancez l'action avec la même identity et l'URL corrigée (vérifiez d'abord
-son URL actuelle sur sa fiche appareil). Pour détacher une borne de son
-cloud et la remettre en supervision locale uniquement, relancez l'action
-avec son identity et une URL **vide** — prend effet à la prochaine
+relancez l'action pour cette même borne avec l'URL corrigée (vérifiez
+d'abord son URL actuelle sur sa fiche appareil). Pour détacher une borne de
+son cloud et la remettre en supervision locale uniquement, relancez
+l'action pour elle avec une URL **vide** — prend effet à la prochaine
 reconnexion de cette borne (elle continue d'être relayée via sa connexion
 en cours jusque-là).
+
+Si vous **supprimez** de Gladys l'appareil d'une borne encore associée à un
+cloud d'origine, elle disparaît de la liste déroulante et l'action ne peut
+plus la modifier — le relais continue d'utiliser ce cloud. Ré-ajoutez
+l'appareil depuis Découverte pour reprendre la main, ou utilisez la
+réinitialisation ci-dessous.
 
 ## Repartir de zéro (debug)
 

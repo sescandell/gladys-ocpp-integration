@@ -85,19 +85,35 @@ it shows up in Discovery the moment it connects, whether or not it has an
 origin cloud yet - genuinely automatic, the same reason any other
 integration's discovered devices show up.
 
-The origin cloud URL is attached separately, at any time, via the
-`add_charger` manifest action (identity + origin cloud URL) - `config_schema`
-is a flat, fixed list of fields, it cannot represent "add as many charge
-points as you want", so the set lives in free internal config storage
-(`src/chargers.js`, key `chargers_json`) instead, pushed live to the gateway
-sub-container (`POST /api/chargers`, see `gateway/src/stateApi.ts`) - no
-container restart needed to add, update, or remove one. The moment a
-previously-unconfigured identity gets a URL, `stateApi.ts` force-closes
-that ONE charge point's live connection (`gateway.ts`'s `localClients` map,
-since `ocpp-rpc` exposes no identity-keyed lookup of its own connections) -
-it reconnects and this time resolves to full relay mode. Removing a charge
-point's URL takes effect on its next reconnection, not retroactively (an
-already-relaying session isn't interrupted).
+The origin cloud URL is attached separately via the `add_charger` manifest
+action - `config_schema` is a flat, fixed list of fields, it cannot represent
+"add as many charge points as you want", so the set lives in free internal
+config storage (`src/chargers.js`, key `chargers_json`) instead, pushed live
+to the gateway sub-container (`POST /api/chargers`, see
+`gateway/src/stateApi.ts`) - no container restart needed to add, update, or
+remove one. The moment a previously-unconfigured identity gets a URL,
+`stateApi.ts` force-closes that ONE charge point's live connection
+(`gateway.ts`'s `localClients` map, since `ocpp-rpc` exposes no
+identity-keyed lookup of its own connections) - it reconnects and this time
+resolves to full relay mode. Removing a charge point's URL takes effect on
+its next reconnection, not retroactively (an already-relaying session isn't
+interrupted).
+
+The action picks the charge point through a `select` with `source:
+"devices"` - Gladys core fills that dropdown itself, so the user never
+retypes an exact OCPP identity. Two consequences worth knowing:
+
+- The value handed to the action is the device's **external_id**, not the
+  identity, hence `identityFromDeviceExternalId()` in `src/devices/charger.js`
+  (it slices by prefix length rather than splitting on `:`, so identities
+  containing separators survive).
+- Such a select only lists devices **already added to Gladys**: the core
+  endpoint behind it (`GET /api/v1/service/<selector>/device`) reads
+  `t_device`, while merely-discovered devices live in an in-memory map it
+  never queries. So a charge point must be created from Discovery before it
+  can be given an origin cloud URL - and deleting its device makes its
+  `chargers_json` entry unreachable from the action (`reset_all` is the way
+  out).
 
 A separate `reset_all` action (confirmation-gated, "type RESET") clears
 `chargers_json` entirely and calls `gladys.restartContainer('gateway')` -

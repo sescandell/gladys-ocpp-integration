@@ -96,6 +96,14 @@ async function setup(t, fakeGladysOptions = {}, registerOptions = {}) {
   return gladys;
 }
 
+// What Gladys hands back for a `select` with `source: "devices"`: the
+// device's external_id, not the OCPP identity (see index.js's add_charger
+// doc comment). Built through the fake's own externalIds() so this stays in
+// step with however ids are shaped.
+function deviceExternalId(gladys, identity) {
+  return gladys.externalIds('ev-charger', identity).device;
+}
+
 test('add_charger action: called with fields directly (the real SDK shape), not { fields }', async (t) => {
   const gladys = await setup(t);
   const addCharger = gladys.handlers.actions['add_charger'];
@@ -104,23 +112,31 @@ test('add_charger action: called with fields directly (the real SDK shape), not 
   // The exact shape gladys.onAction's callback receives in production -
   // NOT wrapped in { fields: ... }.
   const message = await addCharger({
-    identity: 'CP-1',
+    device: deviceExternalId(gladys, 'CP-1'),
     origin_cloud_url: 'wss://cloud-a/ocpp?sn=',
   });
 
   assert.match(message.en, /CP-1.*configured/);
-  assert.match(message.en, /Discovery/i);
   assert.equal(gladys.setConfigCalls.length, 1);
   const stored = JSON.parse(gladys.setConfigCalls[0].chargers_json);
   assert.equal(stored['CP-1'], 'wss://cloud-a/ocpp?sn=');
 });
 
-test('add_charger action: rejects a missing identity', async (t) => {
+test('add_charger action: rejects a missing device selection', async (t) => {
   const gladys = await setup(t);
   const addCharger = gladys.handlers.actions['add_charger'];
   await assert.rejects(
-    () => addCharger({ identity: '', origin_cloud_url: 'wss://cloud-a/ocpp' }),
-    /identity is required/,
+    () => addCharger({ device: '', origin_cloud_url: 'wss://cloud-a/ocpp' }),
+    /Select a charge point/,
+  );
+});
+
+test("add_charger action: rejects an external_id that isn't one of this integration's charge points", async (t) => {
+  const gladys = await setup(t);
+  const addCharger = gladys.handlers.actions['add_charger'];
+  await assert.rejects(
+    () => addCharger({ device: 'ext:other:thermostat:XYZ', origin_cloud_url: 'wss://c/ocpp' }),
+    /Not one of this integration's charge points/,
   );
 });
 
@@ -128,20 +144,27 @@ test('add_charger action: rejects a non-ws(s) origin cloud URL', async (t) => {
   const gladys = await setup(t);
   const addCharger = gladys.handlers.actions['add_charger'];
   await assert.rejects(
-    () => addCharger({ identity: 'CP-1', origin_cloud_url: 'http://cloud-a/ocpp' }),
+    () =>
+      addCharger({
+        device: deviceExternalId(gladys, 'CP-1'),
+        origin_cloud_url: 'http://cloud-a/ocpp',
+      }),
     /valid ws:\/\/ or wss:\/\//,
   );
 });
 
-test('add_charger action: an empty URL removes a previously configured charge point', async (t) => {
+test('add_charger action: an empty URL detaches a previously configured charge point', async (t) => {
   const gladys = await setup(t, {
     config: { chargers_json: JSON.stringify({ 'CP-1': 'wss://cloud-a/ocpp' }) },
   });
   const addCharger = gladys.handlers.actions['add_charger'];
 
-  const message = await addCharger({ identity: 'CP-1', origin_cloud_url: '' });
+  const message = await addCharger({
+    device: deviceExternalId(gladys, 'CP-1'),
+    origin_cloud_url: '',
+  });
 
-  assert.match(message.en, /CP-1.*removed/);
+  assert.match(message.en, /CP-1.*detached/);
   const stored = JSON.parse(gladys.setConfigCalls.at(-1).chargers_json);
   assert.deepEqual(stored, {});
 });

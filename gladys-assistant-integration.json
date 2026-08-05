@@ -22,8 +22,8 @@
         "fr": "Fonctionnement"
       },
       "description": {
-        "en": "This integration runs its own OCPP relay in a companion container, started automatically - check Supervision for the ready-to-use OCPP URL (ws://<your Gladys host>:<port>/). Point any charge point at it right away, in any order: the relay supervises it locally even before it has an origin cloud, and it shows up in Discovery as soon as it connects. Run the \"Add a charge point\" action below (identity + origin cloud URL) whenever you are ready to route it to its real cloud instead - that one charge point reconnects automatically within a few seconds and switches into full relay mode. Its configured URL is then shown on its own Discovery/device card, not listed here. Exposing the OCPP port makes the relay reachable on your LAN - read the documentation before installing.",
-        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur, demarre automatiquement - consultez Supervision pour l'URL OCPP prete a l'emploi (ws://<votre hote Gladys>:<port>/). Pointez n'importe quelle borne dessus tout de suite, dans n'importe quel ordre : le relais la supervise localement meme avant qu'elle ait un cloud d'origine, et elle apparait dans Decouverte des qu'elle se connecte. Lancez l'action \"Ajouter une borne\" ci-dessous (identity + URL de cloud d'origine) quand vous etes pret a la router vers son vrai cloud - cette borne se reconnecte alors automatiquement en quelques secondes et bascule en mode relais complet. Son URL configuree est ensuite affichee sur sa propre fiche Decouverte/appareil, pas listee ici. Exposer le port OCPP rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
+        "en": "This integration runs its own OCPP relay in a companion container, started automatically - check Supervision for the ready-to-use OCPP URL (ws://<your Gladys host>:<port>/). Point any charge point at it right away: the relay supervises it locally even before it has an origin cloud, and it shows up in Discovery as soon as it connects. Add it to Gladys from Discovery, then run the \"Add a charge point\" action below (pick it from the list + its origin cloud URL) whenever you are ready to route it to its real cloud instead - that one charge point reconnects automatically within a few seconds and switches into full relay mode. Its configured URL is then shown on its own device card, not listed here. Exposing the OCPP port makes the relay reachable on your LAN - read the documentation before installing.",
+        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur, demarre automatiquement - consultez Supervision pour l'URL OCPP prete a l'emploi (ws://<votre hote Gladys>:<port>/). Pointez n'importe quelle borne dessus tout de suite : le relais la supervise localement meme avant qu'elle ait un cloud d'origine, et elle apparait dans Decouverte des qu'elle se connecte. Ajoutez-la a Gladys depuis Decouverte, puis lancez l'action \"Ajouter une borne\" ci-dessous (choisissez-la dans la liste + son URL de cloud d'origine) quand vous etes pret a la router vers son vrai cloud - cette borne se reconnecte alors automatiquement en quelques secondes et bascule en mode relais complet. Son URL configuree est ensuite affichee sur sa propre fiche appareil, pas listee ici. Exposer le port OCPP rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
       }
     }
   ],
@@ -35,17 +35,18 @@
         "fr": "Ajouter une borne"
       },
       "description": {
-        "en": "Attach an origin cloud URL to a charge point's identity (check the vendor app, or a label on the charger). Can be run at any time - before the charge point has ever connected, or while it is already being locally supervised. If it is already connected, it reconnects automatically within a few seconds and switches into full relay mode. Running this again with the same identity updates its URL; leave the URL empty to remove a previously configured charge point.",
-        "fr": "Associez une URL de cloud d'origine a l'identity d'une borne (visible dans l'application du fabricant, ou sur une etiquette de la borne). Peut etre lance a tout moment - avant meme que la borne se soit connectee, ou pendant qu'elle est deja supervisee localement. Si elle est deja connectee, elle se reconnecte automatiquement en quelques secondes et bascule en mode relais complet. Relancer cette action avec la meme identity met a jour son URL ; laissez l'URL vide pour retirer une borne deja configuree."
+        "en": "Attach an origin cloud URL to a charge point (take the URL from the vendor app, exactly as shown there). The list only offers charge points already added to Gladys: if yours is missing, add it from the Discovery tab first - it appears there on its own as soon as it connects to the relay. If it is already connected, it reconnects automatically within a few seconds and switches into full relay mode. Running this again for the same charge point updates its URL; leave the URL empty to detach it from its cloud and put it back into local-only supervision.",
+        "fr": "Associez une URL de cloud d'origine a une borne (reprenez l'URL dans l'application du fabricant, exactement telle qu'affichee). La liste ne propose que les bornes deja ajoutees a Gladys : si la votre n'y est pas, ajoutez-la d'abord depuis l'onglet Decouverte - elle y apparait toute seule des qu'elle se connecte au relais. Si elle est deja connectee, elle se reconnecte automatiquement en quelques secondes et bascule en mode relais complet. Relancer cette action pour la meme borne met a jour son URL ; laissez l'URL vide pour la detacher de son cloud et la remettre en supervision locale uniquement."
       },
       "timeout_seconds": 15,
       "fields": [
         {
-          "key": "identity",
-          "type": "string",
+          "key": "device",
+          "type": "select",
+          "source": "devices",
           "label": {
-            "en": "Charge point identity",
-            "fr": "Identity de la borne"
+            "en": "Charge point",
+            "fr": "Borne"
           },
           "required": true
         },
