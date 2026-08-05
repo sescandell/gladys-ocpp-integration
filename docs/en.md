@@ -1,4 +1,4 @@
-# OCPP EV Charger Gateway
+# Charger Station
 
 This is the user documentation of the integration. Gladys re-hosts this file
 and shows a permanent **Documentation** link to it in the Configuration
@@ -8,7 +8,7 @@ configuring that the user needs it most.
 ## Scope of this version
 
 **Read-only supervision, nothing else.** This integration observes any
-number of OCPP 1.6 EV charge points and shows their state in Gladys
+number of OCPP 1.6 charge points and shows their state in Gladys
 (connector status, charging state, power, current, voltage, total energy) —
 there is no way to start, stop, or limit a charge from Gladys yet.
 

@@ -53,10 +53,15 @@ test('top-level shape', () => {
   assert.ok(manifest.docker_image.length > 0);
 });
 
-test('gladys_version requires the release that introduced the CHARGING_STATION category', () => {
-  // First release carrying core PRs #2756 (charging-station features) and
-  // #2779 (server-side validation of a `source: "devices"` select).
-  assert.equal(manifest.gladys_version, '>=4.85.0');
+test('gladys_version stays at the last released version, not the one the features need', () => {
+  // The features published here need core PRs #2756 (charging-station) and
+  // #2779 (validation of a `source: "devices"` select), both merged AFTER
+  // the 4.84.4 bump - so they ship in 4.85.0. Declaring >=4.85.0 anyway
+  // marks the integration incompatible for everyone running a build of
+  // master, since the version bump only happens at release time: master
+  // still reports 4.84.4 while carrying both PRs. Raise this to >=4.85.0
+  // once that release is out.
+  assert.equal(manifest.gladys_version, '>=4.84.0');
 });
 
 test('V1 is read-only: actions only manage charge point configuration and gateway state, never control a device', () => {

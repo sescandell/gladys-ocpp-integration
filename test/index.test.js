@@ -76,6 +76,29 @@ function startFlakyGatewayServer(failCount) {
   return { server, getAttempts: () => attempts };
 }
 
+// A gateway whose observed state the test can change between calls, to
+// simulate a charge point connecting after the last publish.
+function startMutableGatewayServer(getChargers) {
+  const server = createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/api/state') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ chargers: getChargers() }));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/api/chargers') {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, configuredCount: 0 }));
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  return server;
+}
+
 async function setup(t, fakeGladysOptions = {}, registerOptions = {}) {
   const server = startFakeGatewayServer();
   await new Promise((resolve) => server.listen(0, resolve));
@@ -92,8 +115,12 @@ async function setup(t, fakeGladysOptions = {}, registerOptions = {}) {
     ],
     ...fakeGladysOptions,
   });
-  registerHandlers(gladys, { gatewayBaseUrl: `http://127.0.0.1:${port}`, ...registerOptions });
-  return gladys;
+  const handlers = registerHandlers(gladys, {
+    gatewayBaseUrl: `http://127.0.0.1:${port}`,
+    discoveryRefreshIntervalMs: 0,
+    ...registerOptions,
+  });
+  return Object.assign(gladys, { refreshDiscovery: handlers.refreshDiscovery });
 }
 
 // What Gladys hands back for a `select` with `source: "devices"`: the
@@ -101,7 +128,7 @@ async function setup(t, fakeGladysOptions = {}, registerOptions = {}) {
 // doc comment). Built through the fake's own externalIds() so this stays in
 // step with however ids are shaped.
 function deviceExternalId(gladys, identity) {
-  return gladys.externalIds('ev-charger', identity).device;
+  return gladys.externalIds('charger-station', identity).device;
 }
 
 test('add_charger action: called with fields directly (the real SDK shape), not { fields }', async (t) => {
@@ -195,6 +222,89 @@ test('reset_all action: clears every configured charge point and restarts the ga
   assert.equal(gladys.restartContainerCalls[0].name, GATEWAY_SUB_CONTAINER_NAME);
   assert.match(message.en, /cleared/i);
   assert.match(message.en, /not.*removed/i);
+});
+
+test('discovery refresh: republishes once a charge point shows up in the gateway, and only then', async (t) => {
+  // The gateway can only be polled (it never pushes), and a charge point
+  // connects on its own schedule - typically after the reconnection
+  // republish has already run, which used to leave it invisible until the
+  // user happened to hit Rescan.
+  let chargers = {};
+  const server = startMutableGatewayServer(() => chargers);
+  await new Promise((resolve) => server.listen(0, resolve));
+  t.after(() => server.close());
+  const { port } = server.address();
+
+  const gladys = createFakeGladys({
+    containers: [
+      {
+        name: GATEWAY_SUB_CONTAINER_NAME,
+        status: 'running',
+        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
+      },
+    ],
+  });
+  const { refreshDiscovery } = registerHandlers(gladys, {
+    gatewayBaseUrl: `http://127.0.0.1:${port}`,
+    discoveryRefreshIntervalMs: 0,
+  });
+
+  await gladys.handlers.events['connected']();
+  assert.equal(gladys.discoveredDeviceBatches.length, 1);
+  assert.deepEqual(gladys.discoveredDeviceBatches[0], []);
+
+  // Nothing moved: no second publish, so no needless websocket update.
+  await refreshDiscovery();
+  assert.equal(gladys.discoveredDeviceBatches.length, 1);
+
+  chargers = { 'CP-LATE': { identity: 'CP-LATE', connectors: { 1: { status: 'Available' } } } };
+  await refreshDiscovery();
+  assert.equal(gladys.discoveredDeviceBatches.length, 2);
+  assert.deepEqual(
+    gladys.discoveredDeviceBatches[1].map((d) => d.external_id),
+    ['charger-station:CP-LATE'],
+  );
+
+  // Still nothing new: stays quiet.
+  await refreshDiscovery();
+  assert.equal(gladys.discoveredDeviceBatches.length, 2);
+});
+
+test('discovery refresh: republishes when an already-known charge point reports a new connector', async (t) => {
+  let chargers = {
+    'CP-1': { identity: 'CP-1', connectors: { 1: { status: 'Available' } } },
+  };
+  const server = startMutableGatewayServer(() => chargers);
+  await new Promise((resolve) => server.listen(0, resolve));
+  t.after(() => server.close());
+  const { port } = server.address();
+
+  const gladys = createFakeGladys({
+    containers: [
+      {
+        name: GATEWAY_SUB_CONTAINER_NAME,
+        status: 'running',
+        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
+      },
+    ],
+  });
+  const { refreshDiscovery } = registerHandlers(gladys, {
+    gatewayBaseUrl: `http://127.0.0.1:${port}`,
+    discoveryRefreshIntervalMs: 0,
+  });
+
+  await gladys.handlers.events['connected']();
+  assert.equal(gladys.discoveredDeviceBatches.length, 1);
+
+  chargers = {
+    'CP-1': {
+      identity: 'CP-1',
+      connectors: { 1: { status: 'Available' }, 2: { status: 'Available' } },
+    },
+  };
+  await refreshDiscovery();
+  assert.equal(gladys.discoveredDeviceBatches.length, 2);
+  assert.equal(gladys.discoveredDeviceBatches[1][0].features.length, 12);
 });
 
 test("connected event: called with no arguments (the real SDK shape), doesn't throw", async (t) => {

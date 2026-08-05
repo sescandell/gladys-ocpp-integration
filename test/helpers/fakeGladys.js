@@ -28,6 +28,9 @@ export function createFakeGladys(options = {}) {
   const cameraImages = [];
   const transports = [];
   const discoveredDevices = [];
+  // One entry per publishDiscoveredDevices call, so a test can tell "published
+  // twice" from "published once with two devices".
+  const discoveredDeviceBatches = [];
   const connectionStatuses = [];
   const startContainerCalls = [];
   const restartContainerCalls = [];
@@ -49,6 +52,7 @@ export function createFakeGladys(options = {}) {
     cameraImages,
     transports,
     discoveredDevices,
+    discoveredDeviceBatches,
     connectionStatuses,
     startContainerCalls,
     restartContainerCalls,
@@ -82,6 +86,7 @@ export function createFakeGladys(options = {}) {
     },
 
     async publishDiscoveredDevices(devices) {
+      discoveredDeviceBatches.push(devices);
       discoveredDevices.push(...devices);
     },
 

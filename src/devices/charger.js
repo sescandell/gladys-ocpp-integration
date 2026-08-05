@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// Device type: EV CHARGER.
+// Device type: CHARGER STATION.
 //
 // V1 is READ-ONLY: no onSetValue implemented here -> index.js's generic
 // wiring automatically answers "not implemented" if Gladys ever asks.
@@ -50,7 +50,7 @@ import {
 } from '@gladysassistant/integration-sdk';
 import { fetchGatewayState } from '../gatewayClient.js';
 
-const DEVICE_TYPE = 'ev-charger';
+const DEVICE_TYPE = 'charger-station';
 
 const logger = createLogger({ name: DEVICE_TYPE });
 
@@ -274,7 +274,7 @@ function buildChargerDevice(gladys, identity, originCloudUrl, chargeState) {
   const observed = observedConnectorIds(chargeState);
   const connectorIds = observed.length > 0 ? observed : [DEFAULT_CONNECTOR_ID];
   return {
-    name: `EV charger ${identity}`,
+    name: `Charger Station ${identity}`,
     external_id: ids.device,
     poll_frequency: DEVICE_POLL_FREQUENCY_MS,
     // Visible on the device's own card - Découverte before creation, then
@@ -305,7 +305,7 @@ function knownIdentities(config, allChargers) {
 
 /**
  * Reverses `gladys.externalIds(DEVICE_TYPE, identity).device` - i.e. maps
- * `ext:<selector>:ev-charger:<identity>` back to `<identity>`. Needed because
+ * `ext:<selector>:charger-station:<identity>` back to `<identity>`. Needed because
  * the `add_charger` action's charge point picker is a `select` with
  * `source: "devices"`, and Gladys populates such a select with each device's
  * `external_id` as the option VALUE (front's `loadDynamicOptions`) - so the

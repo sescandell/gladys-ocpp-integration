@@ -10,8 +10,8 @@ import { normalizeConfig } from '../../src/config.js';
 import { serializeChargersStore } from '../../src/chargers.js';
 
 const ids = {
-  device: 'ext:test:ev-charger:CP-1',
-  feature: (key) => `ext:test:ev-charger:CP-1:${key}`,
+  device: 'ext:test:charger-station:CP-1',
+  feature: (key) => `ext:test:charger-station:CP-1:${key}`,
 };
 
 test('mapConnectorToStates: null/undefined connector -> no states', () => {
@@ -97,7 +97,7 @@ test('mapConnectorToStates: missing numeric measurements are not published', () 
 
 test('ownsDevice: true for a charger device of this integration, false otherwise', () => {
   const gladys = createFakeGladys();
-  assert.equal(charger.ownsDevice(gladys, 'ev-charger:CP-1'), true);
+  assert.equal(charger.ownsDevice(gladys, 'charger-station:CP-1'), true);
   assert.equal(charger.ownsDevice(gladys, 'some-other-device:xyz'), false);
 });
 
@@ -106,7 +106,7 @@ test('identityFromDeviceExternalId: recovers the OCPP identity from a device ext
   // Exactly the round trip the add_charger action relies on: Gladys's
   // `source: "devices"` select hands back an external_id, everything else
   // works in OCPP identities.
-  const externalId = gladys.externalIds('ev-charger', 'CP-1').device;
+  const externalId = gladys.externalIds('charger-station', 'CP-1').device;
   assert.equal(identityFromDeviceExternalId(gladys, externalId), 'CP-1');
 });
 
@@ -116,7 +116,7 @@ test('identityFromDeviceExternalId: an identity containing separators survives t
   // avoid the ":" this scheme uses as a separator, and slicing by prefix
   // length (rather than splitting) is what makes that safe.
   const identity = 'CP:1:with:colons';
-  const externalId = gladys.externalIds('ev-charger', identity).device;
+  const externalId = gladys.externalIds('charger-station', identity).device;
   assert.equal(identityFromDeviceExternalId(gladys, externalId), identity);
 });
 
@@ -147,7 +147,7 @@ test('buildDevices: a configured charge point is offered even when the gateway i
   });
   assert.deepEqual(
     devices.map((d) => d.external_id),
-    ['ev-charger:CP-1'],
+    ['charger-station:CP-1'],
   );
   // Seeded with the default connector 1 - nothing was ever observed.
   assert.equal(devices[0].features.length, 6);
@@ -158,7 +158,7 @@ test('buildDevices: a configured charge point that has never connected is still 
   const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
   assert.deepEqual(
     devices.map((d) => d.external_id),
-    ['ev-charger:CP-1'],
+    ['charger-station:CP-1'],
   );
   // Fixed at Gladys's "every minute" tier - no longer user-configurable.
   assert.equal(devices[0].poll_frequency, 60_000);
@@ -265,7 +265,7 @@ test('buildDevices: one device for the charge point, features for every physical
   const devices = await charger.buildDevices(gladys, config, fetchState);
   assert.equal(devices.length, 1);
   const [device] = devices;
-  assert.equal(device.external_id, 'ev-charger:CP-1');
+  assert.equal(device.external_id, 'charger-station:CP-1');
   assert.equal(device.features.length, 12); // 6 per connector x 2 connectors
   assert.ok(device.features.some((f) => f.external_id.endsWith(':1')));
   assert.ok(device.features.some((f) => f.external_id.endsWith(':2')));
@@ -308,14 +308,14 @@ test('buildDevices: devices from TWO different configured charge points, no cros
 
   const devices = await charger.buildDevices(gladys, multiConfig, fetchState);
   const externalIds = devices.map((d) => d.external_id).sort();
-  assert.deepEqual(externalIds, ['ev-charger:CP-VENDOR-A', 'ev-charger:CP-VENDOR-B']);
-  const deviceA = devices.find((d) => d.external_id === 'ev-charger:CP-VENDOR-A');
+  assert.deepEqual(externalIds, ['charger-station:CP-VENDOR-A', 'charger-station:CP-VENDOR-B']);
+  const deviceA = devices.find((d) => d.external_id === 'charger-station:CP-VENDOR-A');
   assert.match(deviceA.name, /CP-VENDOR-A/);
   assert.equal(deviceA.features.length, 6);
   assert.deepEqual(deviceA.params, [
     { name: 'Origin cloud URL', value: 'wss://cloud-a.example.com/ocpp' },
   ]);
-  const deviceB = devices.find((d) => d.external_id === 'ev-charger:CP-VENDOR-B');
+  const deviceB = devices.find((d) => d.external_id === 'charger-station:CP-VENDOR-B');
   assert.equal(deviceB.features.length, 12);
   assert.deepEqual(deviceB.params, [
     { name: 'Origin cloud URL', value: 'wss://cloud-b.example.com/ocpp' },
@@ -336,8 +336,8 @@ test('buildDevices: a configured charge point that has never connected is offere
 
   const devices = await charger.buildDevices(gladys, multiConfig, fetchState);
   assert.deepEqual(devices.map((d) => d.external_id).sort(), [
-    'ev-charger:CP-CONNECTED',
-    'ev-charger:CP-NEVER-SEEN',
+    'charger-station:CP-CONNECTED',
+    'charger-station:CP-NEVER-SEEN',
   ]);
 });
 
@@ -356,7 +356,7 @@ test('buildDevices: an identity only known to the gateway (auto-detected, never 
   const devices = await charger.buildDevices(gladys, normalizeConfig(), fetchState);
   assert.deepEqual(
     devices.map((d) => d.external_id),
-    ['ev-charger:CP-AUTO-DETECTED'],
+    ['charger-station:CP-AUTO-DETECTED'],
   );
   assert.deepEqual(devices[0].params, [
     { name: 'Origin cloud URL', value: 'Not yet configured - run the "Add a charge point" action' },
@@ -365,7 +365,7 @@ test('buildDevices: an identity only known to the gateway (auto-detected, never 
 
 test('onPoll: publishes states for the matching charge point, all its connectors', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'ev-charger:CP-1' };
+  const device = { external_id: 'charger-station:CP-1' };
   const fetchState = async () => ({
     chargers: {
       'CP-1': { identity: 'CP-1', connectors: { 1: { status: 'Charging', voltageV: 230 } } },
@@ -384,7 +384,7 @@ test('onPoll: only publishes for the targeted device, not other configured charg
     'CP-A': 'wss://cloud-a/ocpp',
     'CP-B': 'wss://cloud-b/ocpp',
   });
-  const device = { external_id: 'ev-charger:CP-A' };
+  const device = { external_id: 'charger-station:CP-A' };
   const fetchState = async () => ({
     chargers: {
       'CP-A': { identity: 'CP-A', connectors: { 1: { status: 'Charging', voltageV: 100 } } },
@@ -399,7 +399,7 @@ test('onPoll: only publishes for the targeted device, not other configured charg
 
 test('onPoll: resolves and publishes for a device whose identity was never configured (auto-detected only)', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'ev-charger:CP-AUTO-DETECTED' };
+  const device = { external_id: 'charger-station:CP-AUTO-DETECTED' };
   const fetchState = async () => ({
     chargers: {
       'CP-AUTO-DETECTED': {
@@ -418,7 +418,7 @@ test('onPoll: resolves and publishes for a device whose identity was never confi
 
 test('onPoll: does nothing when the charge point reports no connector', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'ev-charger:CP-1' };
+  const device = { external_id: 'charger-station:CP-1' };
   const fetchState = async () => ({ chargers: { 'CP-1': { identity: 'CP-1', connectors: {} } } });
 
   await charger.onPoll(gladys, config, device, fetchState);
@@ -427,7 +427,7 @@ test('onPoll: does nothing when the charge point reports no connector', async ()
 
 test('onPoll: does nothing when the gateway knows no charge point at all', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'ev-charger:CP-1' };
+  const device = { external_id: 'charger-station:CP-1' };
 
   await charger.onPoll(gladys, config, device, async () => ({ chargers: {} }));
   assert.equal(gladys.published.length, 0);
@@ -435,7 +435,7 @@ test('onPoll: does nothing when the gateway knows no charge point at all', async
 
 test('onPoll: does not throw when the gateway is unreachable (transient during startup/restart)', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'ev-charger:CP-1' };
+  const device = { external_id: 'charger-station:CP-1' };
   const fetchState = async () => {
     throw new Error('connect ECONNREFUSED 172.18.0.3:9080');
   };

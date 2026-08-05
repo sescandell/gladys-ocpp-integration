@@ -1,4 +1,4 @@
-# Passerelle OCPP pour borne de recharge
+# Borne de recharge
 
 Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
 fichier et affiche un lien **Documentation** permanent vers lui dans l'écran

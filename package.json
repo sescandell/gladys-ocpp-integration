@@ -2,7 +2,7 @@
   "name": "gladys-ocpp-integration",
   "version": "0.6.1",
   "private": true,
-  "description": "Gladys Assistant external integration: read-only supervision of an OCPP 1.6 EV charge point through an embedded relay.",
+  "description": "Gladys Assistant external integration: read-only supervision of an OCPP 1.6 charge point through an embedded relay.",
   "type": "module",
   "main": "index.js",
   "scripts": {

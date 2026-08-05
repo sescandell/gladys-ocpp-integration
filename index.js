@@ -35,7 +35,11 @@ import { fileURLToPath } from 'node:url';
 import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
 import { normalizeConfig } from './src/config.js';
 import { serializeChargersStore, upsertCharger, removeCharger } from './src/chargers.js';
-import { buildDiscoveredDevices, findBlueprintByDevice } from './src/devices/index.js';
+import {
+  buildDiscoveredDevices,
+  findBlueprintByDevice,
+  gatewayStateReader,
+} from './src/devices/index.js';
 import { identityFromDeviceExternalId } from './src/devices/charger.js';
 import {
   ensureGatewayRunning,
@@ -54,7 +58,7 @@ import {
  * `callback({ fields })` - a wrong destructure here crashed on
  * `fields.identity` the moment the action ran for real.
  * @param {import('@gladysassistant/integration-sdk').GladysIntegration} gladys
- * @param {{gatewayBaseUrl?: string, gatewayRetry?: {attempts?: number, delayMs?: number}}} [options]
+ * @param {{gatewayBaseUrl?: string, gatewayRetry?: {attempts?: number, delayMs?: number}, discoveryRefreshIntervalMs?: number}} [options]
  *   `gatewayBaseUrl` overrides the gateway sub-container's fixed internal
  *   URL - test-only (see test/index.test.js): hitting the real one from a
  *   dev machine takes several real seconds to fail (DNS), against a local
@@ -62,14 +66,25 @@ import {
  *   uses the real internal DNS alias (see gatewayClient.js). `gatewayRetry`
  *   overrides the retry schedule around the gateway's own HTTP API (see
  *   `withGatewayRetries` below) - test-only, to keep retry tests fast.
+ *   `discoveryRefreshIntervalMs` <= 0 disables the periodic republish.
+ * @returns {{refreshDiscovery: () => Promise<void>}}
  */
-export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } = {}) {
+export function registerHandlers(
+  gladys,
+  { gatewayBaseUrl, gatewayRetry = {}, discoveryRefreshIntervalMs = 30_000 } = {},
+) {
   const gatewayRetryAttempts = gatewayRetry.attempts ?? 5;
   const gatewayRetryDelayMs = gatewayRetry.delayMs ?? 500;
+  const fetchState = gatewayStateReader(gatewayBaseUrl);
 
   // Current configuration (hot-reloaded via onConfigUpdated and after every
   // add_charger action).
   let config = normalizeConfig();
+
+  // Signature of the last successfully published device list, so the periodic
+  // refresh below only republishes on an actual change.
+  let lastPublishedSignature = null;
+  let discoveryTimer = null;
 
   /**
    * A few short retries around a call that reaches the gateway sub-
@@ -98,6 +113,57 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
       }
     }
     throw lastErr;
+  }
+
+  /** Identifies a published device list: which devices, with which features. */
+  function discoverySignature(devices) {
+    return devices
+      .map(
+        (device) => `${device.external_id}[${(device.features ?? []).map((f) => f.external_id)}]`,
+      )
+      .sort()
+      .join('|');
+  }
+
+  /**
+   * Builds and publishes the current device list. `onlyIfChanged` skips the
+   * call when nothing moved since the last publish - used by the periodic
+   * refresh, which would otherwise push a websocket update to every open
+   * front every tick.
+   */
+  async function publishDevices({ onlyIfChanged = false } = {}) {
+    const devices = await buildDiscoveredDevices(gladys, config, fetchState);
+    const signature = discoverySignature(devices);
+    if (onlyIfChanged && signature === lastPublishedSignature) {
+      return;
+    }
+    await gladys.publishDiscoveredDevices(devices);
+    lastPublishedSignature = signature;
+    logger.info(`Published ${devices.length} discovered device(s)`);
+  }
+
+  // A charge point can connect at any time and the gateway has no way to push
+  // that back here (it only answers GET /api/state), so without this the
+  // device would stay invisible until the user happened to hit Rescan - or
+  // forever, since nothing else republishes on its own. Observed for real:
+  // after an integration update, the gateway restarts with an empty in-memory
+  // store and the charge point reconnects on its own backoff, always after
+  // the reconnection republish has already run.
+  function startDiscoveryRefresh() {
+    if (discoveryTimer) {
+      clearInterval(discoveryTimer);
+      discoveryTimer = null;
+    }
+    if (discoveryRefreshIntervalMs <= 0) {
+      return;
+    }
+    discoveryTimer = setInterval(() => {
+      publishDevices({ onlyIfChanged: true }).catch((err) => {
+        logger.warn('Periodic discovery refresh failed', err);
+      });
+    }, discoveryRefreshIntervalMs);
+    // Never hold the process open on this alone.
+    discoveryTimer.unref?.();
   }
 
   /**
@@ -149,7 +215,7 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
   // --- Discovery: Gladys asks for the list of devices -------------------------
   gladys.onScanRequest(async () => {
     logger.info('onScanRequest -> publishing discovered connector device(s)');
-    await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+    await publishDevices();
   });
 
   // --- Polling: Gladys asks to refresh a device --------------------------------
@@ -159,7 +225,7 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
       logger.debug(`onPoll ignored (no polling) for ${device.external_id}`);
       return;
     }
-    await blueprint.onPoll(gladys, config, device);
+    await blueprint.onPoll(gladys, config, device, fetchState);
   });
 
   // --- Configuration updated (the manifest declares no config_schema at ------
@@ -170,7 +236,7 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
     logger.info('onConfigUpdated -> new configuration received');
     config = normalizeConfig(newConfig);
     await reconcileGateway();
-    await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+    await publishDevices();
   });
 
   // --- Manifest action: add (or remove) one charge point -----------------------
@@ -220,7 +286,7 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
     config = { ...freshConfig, chargers };
 
     await reconcileGateway();
-    await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+    await publishDevices();
 
     return originCloudUrl === ''
       ? {
@@ -256,7 +322,7 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
 
     await gladys.restartContainer(GATEWAY_SUB_CONTAINER_NAME);
     await reconcileGateway();
-    await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+    await publishDevices();
 
     return {
       en: 'Gateway state cleared and every charge point unconfigured. Connected charge points will reconnect automatically within a few seconds and reappear in Discovery. Devices already added to Gladys were NOT removed - delete those manually if you no longer want them.',
@@ -275,7 +341,7 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
       await reconcileGateway();
 
       // 3) (Re)publish whatever connector devices are currently known.
-      await gladys.publishDiscoveredDevices(await buildDiscoveredDevices(gladys, config));
+      await publishDevices();
     } catch (err) {
       logger.error('Post-connection initialization failed', err);
       await gladys
@@ -284,13 +350,24 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
           fr: "L'initialisation a échoué, consultez les logs de l'intégration.",
         })
         .catch(() => {});
+    } finally {
+      // Even if the steps above failed: the gateway may well come back on its
+      // own, and this is then what picks it up.
+      startDiscoveryRefresh();
     }
   });
 
   // --- Graceful shutdown -------------------------------------------------------
   gladys.handleShutdown((signal) => {
     logger.info(`Received ${signal} -> graceful shutdown`);
+    if (discoveryTimer) {
+      clearInterval(discoveryTimer);
+      discoveryTimer = null;
+    }
   });
+
+  // Lets a test drive one refresh tick without waiting on the real timer.
+  return { refreshDiscovery: () => publishDevices({ onlyIfChanged: true }) };
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];

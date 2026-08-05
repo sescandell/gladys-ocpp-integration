@@ -1,7 +1,7 @@
 # Gladys OCPP integration
 
 External integration for [Gladys Assistant](https://gladysassistant.com):
-read-only supervision of any number of OCPP 1.6 EV charge points, each
+read-only supervision of any number of OCPP 1.6 charge points, each
 relayed through an embedded, companion OCPP relay to its own vendor cloud —
 even different vendors at once. Built with the JavaScript SDK
 [`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),

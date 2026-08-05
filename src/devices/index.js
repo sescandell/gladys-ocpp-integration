@@ -11,16 +11,31 @@
 // -----------------------------------------------------------------------------
 
 import { charger } from './charger.js';
+import { fetchGatewayState } from '../gatewayClient.js';
 
 export const DEVICE_BLUEPRINTS = [charger];
+
+/**
+ * Wraps the gateway state reader against a specific base URL, or leaves the
+ * blueprints on their own default (the fixed internal URL) when none is given.
+ * @param {string} [gatewayBaseUrl]
+ */
+export function gatewayStateReader(gatewayBaseUrl) {
+  return gatewayBaseUrl ? () => fetchGatewayState(gatewayBaseUrl) : undefined;
+}
 
 /**
  * Build the discovery payload for Gladys (every device every blueprint
  * currently has to offer). Async because blueprints may need to query the
  * gateway sub-container to know what they can currently offer.
+ * @param {object} gladys
+ * @param {object} config
+ * @param {Function} [fetchState] overrides how the gateway state is read
  */
-export async function buildDiscoveredDevices(gladys, config) {
-  const lists = await Promise.all(DEVICE_BLUEPRINTS.map((bp) => bp.buildDevices(gladys, config)));
+export async function buildDiscoveredDevices(gladys, config, fetchState) {
+  const lists = await Promise.all(
+    DEVICE_BLUEPRINTS.map((bp) => bp.buildDevices(gladys, config, fetchState)),
+  );
   return lists.flat();
 }
 
