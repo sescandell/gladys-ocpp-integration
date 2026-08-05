@@ -15,15 +15,75 @@
   ],
   "config_schema": [
     {
-      "key": "how_to",
+      "key": "how_to_intro",
       "type": "section",
       "label": {
         "en": "Connecting a charge point",
         "fr": "Raccorder une borne"
       },
       "description": {
-        "en": "1. In your charge point's app, write down the OCPP server URL it currently uses - this is the only way back to your vendor's cloud, keep it safe. 2. Replace it with the OCPP URL shown on the Supervision screen: your Gladys address, on the port listed there. 3. The charge point connects and appears in the Discovery tab - add it to Gladys. 4. Come back here, run \"Add a charge point\" below, pick it from the list and paste the URL from step 1. 5. Done: the charge point keeps talking to its vendor's cloud exactly as before, through Gladys, which now follows it live.",
-        "fr": "1. Dans l'application de votre borne, notez l'URL du serveur OCPP actuellement utilisée - c'est le seul chemin de retour vers le cloud du fabricant, gardez-la précieusement. 2. Remplacez-la par l'URL OCPP affichée sur l'écran Supervision : l'adresse de votre Gladys, sur le port qui y est indiqué. 3. La borne se connecte et apparaît dans l'onglet Découverte - ajoutez-la à Gladys. 4. Revenez ici, lancez l'action \"Ajouter une borne\" ci-dessous, choisissez-la dans la liste et collez l'URL de l'étape 1. 5. C'est tout : la borne continue de dialoguer avec le cloud du fabricant exactement comme avant, en passant par Gladys, qui la suit désormais en direct."
+        "en": "Five steps, once per charge point. It keeps talking to your vendor's cloud exactly as before - Gladys simply sits in the middle and watches.",
+        "fr": "Cinq étapes, une fois par borne. Elle continue de dialoguer avec le cloud du fabricant exactement comme avant - Gladys se place simplement au milieu et observe."
+      }
+    },
+    {
+      "key": "how_to_step_1",
+      "type": "section",
+      "label": {
+        "en": "1. Note your current OCPP URL",
+        "fr": "1. Notez votre URL OCPP actuelle"
+      },
+      "description": {
+        "en": "In your charge point's app, write down the OCPP server URL it uses today. This is your only way back to your vendor's cloud - keep it somewhere safe.",
+        "fr": "Dans l'application de votre borne, notez l'URL du serveur OCPP qu'elle utilise aujourd'hui. C'est votre seul chemin de retour vers le cloud du fabricant - gardez-la précieusement."
+      }
+    },
+    {
+      "key": "how_to_step_2",
+      "type": "section",
+      "label": {
+        "en": "2. Point the charge point at Gladys",
+        "fr": "2. Pointez la borne vers Gladys"
+      },
+      "description": {
+        "en": "In that same app, replace it with the OCPP URL shown on the Supervision screen: your Gladys address, on the port listed there. The same URL works for every charge point.",
+        "fr": "Dans cette même application, remplacez-la par l'URL OCPP affichée sur l'écran Supervision : l'adresse de votre Gladys, sur le port qui y est indiqué. La même URL fonctionne pour toutes vos bornes."
+      }
+    },
+    {
+      "key": "how_to_step_3",
+      "type": "section",
+      "label": {
+        "en": "3. Add it to Gladys",
+        "fr": "3. Ajoutez-la à Gladys"
+      },
+      "description": {
+        "en": "It connects straight away and appears in the Discovery tab, already supervised. Add it from there.",
+        "fr": "Elle se connecte aussitôt et apparaît dans l'onglet Découverte, déjà supervisée. Ajoutez-la depuis là."
+      }
+    },
+    {
+      "key": "how_to_step_4",
+      "type": "section",
+      "label": {
+        "en": "4. Give it back its cloud",
+        "fr": "4. Rendez-lui son cloud"
+      },
+      "description": {
+        "en": "Run the \"Add a charge point\" action below, pick it from the list, and paste the URL from step 1 - exactly as the vendor app showed it.",
+        "fr": "Lancez l'action \"Ajouter une borne\" ci-dessous, choisissez-la dans la liste et collez l'URL de l'étape 1 - exactement telle que l'application du fabricant l'affichait."
+      }
+    },
+    {
+      "key": "how_to_step_5",
+      "type": "section",
+      "label": {
+        "en": "5. Done",
+        "fr": "5. C'est tout"
+      },
+      "description": {
+        "en": "The charge point reconnects on its own within seconds, and Gladys now follows it live.",
+        "fr": "La borne se reconnecte toute seule en quelques secondes, et Gladys la suit désormais en direct."
       }
     }
   ],

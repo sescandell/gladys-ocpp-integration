@@ -77,11 +77,27 @@ test('config_schema holds the walkthrough and nothing else - no field stores a v
   // config_schema is a flat, fixed list of fields and cannot represent it.
   // What is left is the one thing a form is good at here: telling the user
   // what to do, on the screen where they do it.
+  //
+  // One section PER STEP, not one section holding all five: the frontend
+  // renders a description in a plain <p> (ConfigSchemaForm.jsx), so newlines
+  // collapse, and the manifest allows neither markdown nor HTML. Splitting is
+  // the only way to get a readable walkthrough - and it is what an ordered
+  // list of sections is for.
   assert.deepEqual(
     manifest.config_schema.map((f) => f.key),
-    ['how_to'],
+    [
+      'how_to_intro',
+      'how_to_step_1',
+      'how_to_step_2',
+      'how_to_step_3',
+      'how_to_step_4',
+      'how_to_step_5',
+    ],
   );
-  assert.equal(manifest.config_schema[0].type, 'section');
+  assert.ok(
+    manifest.config_schema.every((f) => f.type === 'section'),
+    'every config_schema field must stay presentational',
+  );
 });
 
 test('add_charger action: device picker required, origin_cloud_url optional (empty = detach)', () => {
