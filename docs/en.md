@@ -121,6 +121,11 @@ across those two: `Preparing` shows as "Occupied / Vehicle connected",
 charging state reads _Idle_. Both features stay empty until the charge point
 has reported its status at least once.
 
+Values update **as they happen**, within a few seconds: the relay tells the
+integration about every change it observes rather than being asked at
+intervals. A charge point that connects for the first time also appears in
+Discovery on its own, without waiting for a refresh.
+
 ## Multiple connectors
 
 A charge point is one device in Gladys, whatever its number of physical

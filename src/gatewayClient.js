@@ -32,6 +32,51 @@ export async function fetchGatewayState(baseUrl = GATEWAY_INTERNAL_URL) {
 }
 
 /**
+ * Subscribes to the gateway's change stream (`GET /api/events`, SSE - see
+ * gateway/src/changeFeed.ts) and calls `onEvent` for every frame, until the
+ * stream ends or `signal` aborts. Resolves when the stream ends; rejects if it
+ * could not be opened. Reconnection is the caller's business (see index.js).
+ *
+ * Hand-rolled SSE parsing rather than a dependency: the format is two lines,
+ * and `EventSource` only landed as a global in Node 22.3 - too new to rely on
+ * for a container whose base image is not pinned by this repo.
+ * @param {{baseUrl?: string, onEvent: (event: object) => void, signal?: AbortSignal}} options
+ * @returns {Promise<void>}
+ */
+export async function streamGatewayEvents({ baseUrl = GATEWAY_INTERNAL_URL, onEvent, signal }) {
+  // No timeout: an idle stream is the normal state of this connection (the
+  // gateway sends a heartbeat comment so a dead peer still surfaces).
+  const res = await fetch(`${baseUrl}/api/events`, {
+    headers: { Accept: 'text/event-stream' },
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`gateway /api/events -> HTTP ${res.status}`);
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let separator = buffer.indexOf('\n\n');
+    while (separator !== -1) {
+      const frame = buffer.slice(0, separator);
+      buffer = buffer.slice(separator + 2);
+      // Comment-only frames (":ping") carry no data line and are skipped.
+      const data = frame
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice('data:'.length).trim())
+        .join('\n');
+      if (data) {
+        onEvent(JSON.parse(data));
+      }
+      separator = buffer.indexOf('\n\n');
+    }
+  }
+}
+
+/**
  * Pushes the full, current set of configured charge points (identity ->
  * origin cloud URL) to the gateway sub-container - a live, full replace, no
  * container restart involved. Safe to call anytime the gateway is running:

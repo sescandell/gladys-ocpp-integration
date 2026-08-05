@@ -67,6 +67,7 @@ import { StateStore } from './state.ts';
 import { ChargerRegistry } from './chargerRegistry.ts';
 import { observe } from './observe.ts';
 import { createStateApiServer, type LocalClient } from './stateApi.ts';
+import { createChangeFeed } from './changeFeed.ts';
 import { formatExchangeLog } from './exchangeLog.ts';
 import { buildPrimaryConnectionOptions } from './originConnection.ts';
 import { synthesizeLocalResponse } from './localMode.ts';
@@ -81,6 +82,8 @@ export const store = new StateStore();
 export const registry = new ChargerRegistry();
 /** Currently-connected charge points in LOCAL MODE only - see header comment. */
 export const localClients: Map<string, LocalClient> = new Map();
+/** Pushes observed changes to the main container - see changeFeed.ts. */
+export const changeFeed = createChangeFeed(store);
 
 export function createGatewayServer(options: GatewayOptions = {}) {
   const protocols = options.protocols ?? DEFAULT_PROTOCOLS;
@@ -97,6 +100,9 @@ export function createGatewayServer(options: GatewayOptions = {}) {
   server.on('client', (client: any) => {
     const identity = client.identity as string;
     const state = store.get(identity);
+    // A charge point connecting is itself news: this is what makes it show up
+    // in Discovery within seconds rather than at the next refresh.
+    changeFeed.notify(identity);
 
     const originCloudUrl = registry.resolve(identity);
     if (originCloudUrl === undefined) {
@@ -111,6 +117,7 @@ export function createGatewayServer(options: GatewayOptions = {}) {
         const params = args.params;
         const response = synthesizeLocalResponse(method, params);
         observe(state, method, params, response);
+        changeFeed.notify(identity);
         console.log(
           formatExchangeLog('EV Charger -> Local (unconfigured)', identity, method, params, {
             ok: true,
@@ -174,6 +181,7 @@ export function createGatewayServer(options: GatewayOptions = {}) {
       try {
         const response = await primaryClient.call(method, params, { signal });
         observe(state, method, params, response);
+        changeFeed.notify(identity);
         console.log(
           formatExchangeLog('EV Charger -> Primary', identity, method, params, {
             ok: true,
@@ -183,6 +191,7 @@ export function createGatewayServer(options: GatewayOptions = {}) {
         return response;
       } catch (err) {
         observe(state, method, params, undefined);
+        changeFeed.notify(identity);
         console.error(
           formatExchangeLog('EV Charger -> Primary', identity, method, params, {
             ok: false,
@@ -239,7 +248,7 @@ async function main() {
   console.log(`gateway listening on ws://0.0.0.0:${port}/`);
 
   const stateApiPort = Number.parseInt(process.env.UI_PORT ?? '9080', 10);
-  const stateApiServer = createStateApiServer(store, registry, localClients);
+  const stateApiServer = createStateApiServer(store, registry, localClients, changeFeed);
   await new Promise<void>((resolve) => stateApiServer.listen(stateApiPort, resolve));
   console.log(
     `gateway internal state API listening on http://0.0.0.0:${stateApiPort}/ (private network only)`,

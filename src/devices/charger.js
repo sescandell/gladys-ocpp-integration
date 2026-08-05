@@ -260,7 +260,7 @@ function buildConnectorFeatures(ids, connectorId) {
   ];
 }
 
-function observedConnectorIds(chargeState) {
+export function observedConnectorIds(chargeState) {
   return Object.keys(chargeState?.connectors ?? {})
     .map(Number)
     .filter((id) => id !== AGGREGATE_CONNECTOR_ID)
@@ -276,6 +276,14 @@ function buildChargerDevice(gladys, identity, originCloudUrl, chargeState) {
   return {
     name: `Charger Station ${identity}`,
     external_id: ids.device,
+    // t_device.should_poll defaults to FALSE and nothing in the external
+    // integration path derives it from poll_frequency (device.add.js only
+    // schedules a device when should_poll === true), so declaring a
+    // frequency alone schedules nothing at all: onPoll never fires and no
+    // state is ever published. The SDK's Device type doesn't list this
+    // field, but setDiscoveredDevices passes unknown keys straight through
+    // and the Discovery screen POSTs the payload verbatim.
+    should_poll: true,
     poll_frequency: DEVICE_POLL_FREQUENCY_MS,
     // Visible on the device's own card - Découverte before creation, then
     // Appareils after - both render a device's `params` as a plain
@@ -314,6 +322,21 @@ function knownIdentities(config, allChargers) {
  * @returns {string|null} the identity, or null if `externalId` isn't one of
  *   this blueprint's devices (the caller decides how to report that).
  */
+/**
+ * Every Gladys state one charge point's observed state translates into, across
+ * all of its connectors. Shared by the poll path and the gateway's change
+ * stream (see index.js) so both publish exactly the same thing.
+ * @param {object} gladys
+ * @param {string} identity OCPP identity
+ * @param {object} chargeState ChargerState JSON from the gateway
+ */
+export function chargerStates(gladys, identity, chargeState) {
+  const ids = gladys.externalIds(DEVICE_TYPE, identity);
+  return observedConnectorIds(chargeState).flatMap((connectorId) =>
+    mapConnectorToStates(ids, connectorId, chargeState.connectors[connectorId]),
+  );
+}
+
 export function identityFromDeviceExternalId(gladys, externalId) {
   const prefix = gladys.externalIds(DEVICE_TYPE, '').device;
   return externalId.startsWith(prefix) ? externalId.slice(prefix.length) : null;
@@ -380,10 +403,7 @@ export const charger = {
     const chargeState = allChargers?.[identity];
     if (!chargeState) return; // known, but no observed connector state yet
 
-    const ids = gladys.externalIds(DEVICE_TYPE, identity);
-    const states = observedConnectorIds(chargeState).flatMap((connectorId) =>
-      mapConnectorToStates(ids, connectorId, chargeState.connectors[connectorId]),
-    );
+    const states = chargerStates(gladys, identity, chargeState);
 
     if (states.length > 0) {
       logger.info(`Poll OK: ${states.length} state(s) published for ${identity}`);

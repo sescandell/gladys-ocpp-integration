@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RPCClient, RPCServer } from 'ocpp-rpc';
 import type { IHandlersOption } from 'ocpp-rpc';
-import { createGatewayServer, store, registry, localClients } from '../src/gateway.ts';
+import { createGatewayServer, store, registry, localClients, changeFeed } from '../src/gateway.ts';
 import { createStateApiServer } from '../src/stateApi.ts';
 import type {
   BootNotificationResponse,
@@ -416,4 +416,40 @@ test('a configured but malformed origin cloud URL closes the connection cleanly,
   const secondClosed = new Promise<void>((resolve) => secondClient.once('close', () => resolve()));
   await secondClient.connect();
   await secondClosed;
+});
+
+test('a real OCPP exchange reaches the change feed, so the main container never has to poll', async (t) => {
+  const PORT = 19560;
+
+  registry.replaceMap({}); // local mode, no primary needed
+  const gatewayServer = createGatewayServer();
+  await gatewayServer.listen(PORT);
+  t.after(() => gatewayServer.close({}));
+
+  const seen: string[] = [];
+  const unsubscribe = changeFeed.subscribe((change) => seen.push(change.identity));
+  t.after(() => unsubscribe());
+
+  const client = new RPCClient({
+    endpoint: `ws://localhost:${PORT}`,
+    identity: 'CP-FEED',
+    protocols: ['ocpp1.6'],
+    reconnect: false,
+  } as ClientOptions);
+  await client.connect();
+  t.after(() => client.close());
+
+  await client.call('StatusNotification', {
+    connectorId: 1,
+    status: 'Charging',
+    errorCode: 'NoError',
+  });
+
+  // The feed coalesces over a short window before emitting. It is a module
+  // singleton, so an earlier test's pending notify can land here too - only
+  // this identity matters.
+  while (!seen.includes('CP-FEED')) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(store.get('CP-FEED').connector(1).status, 'Charging');
 });

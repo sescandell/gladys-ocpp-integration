@@ -40,10 +40,16 @@ import {
   findBlueprintByDevice,
   gatewayStateReader,
 } from './src/devices/index.js';
-import { identityFromDeviceExternalId } from './src/devices/charger.js';
+import {
+  identityFromDeviceExternalId,
+  chargerStates,
+  observedConnectorIds,
+} from './src/devices/charger.js';
+import { createStatePublisher } from './src/stateSync.js';
 import {
   ensureGatewayRunning,
   syncChargerMap,
+  streamGatewayEvents,
   GATEWAY_SUB_CONTAINER_NAME,
 } from './src/gatewayClient.js';
 
@@ -66,12 +72,19 @@ import {
  *   uses the real internal DNS alias (see gatewayClient.js). `gatewayRetry`
  *   overrides the retry schedule around the gateway's own HTTP API (see
  *   `withGatewayRetries` below) - test-only, to keep retry tests fast.
- *   `discoveryRefreshIntervalMs` <= 0 disables the periodic republish.
- * @returns {{refreshDiscovery: () => Promise<void>}}
+ *   `discoveryRefreshIntervalMs` <= 0 disables the periodic republish, and
+ *   `eventStreamEnabled: false` the subscription to the gateway's change
+ *   stream - both test-only, production wants them on.
+ * @returns {{refreshDiscovery: () => Promise<void>, handleGatewayChange: (event: object) => Promise<void>}}
  */
 export function registerHandlers(
   gladys,
-  { gatewayBaseUrl, gatewayRetry = {}, discoveryRefreshIntervalMs = 30_000 } = {},
+  {
+    gatewayBaseUrl,
+    gatewayRetry = {},
+    discoveryRefreshIntervalMs = 30_000,
+    eventStreamEnabled = true,
+  } = {},
 ) {
   const gatewayRetryAttempts = gatewayRetry.attempts ?? 5;
   const gatewayRetryDelayMs = gatewayRetry.delayMs ?? 500;
@@ -85,6 +98,16 @@ export function registerHandlers(
   // refresh below only republishes on an actual change.
   let lastPublishedSignature = null;
   let discoveryTimer = null;
+  let eventStreamAbort = null;
+  let eventStreamRunning = false;
+  let stopped = false;
+  /** identity -> connector ids last reflected in Discovery. */
+  const publishedShapes = new Map();
+
+  const statePublisher = createStatePublisher({
+    publishStates: (states) => gladys.publishStates(states),
+    logger,
+  });
 
   /**
    * A few short retries around a call that reaches the gateway sub-
@@ -140,6 +163,61 @@ export function registerHandlers(
     await gladys.publishDiscoveredDevices(devices);
     lastPublishedSignature = signature;
     logger.info(`Published ${devices.length} discovered device(s)`);
+  }
+
+  /**
+   * One change pushed by the gateway (see gateway/src/changeFeed.ts): publish
+   * the charge point's states, and - when it brings a charge point or a
+   * connector never published before - refresh Discovery too, so hardware
+   * plugged in right now appears within seconds rather than at the next tick.
+   *
+   * The event carries the charger's full state, so the common case (a meter
+   * value on a known connector) costs no call back to the gateway at all:
+   * `publishedShapes` is what keeps the Discovery refresh off that path.
+   */
+  async function handleGatewayChange({ identity, charger }) {
+    if (!identity || !charger) return;
+    const shape = observedConnectorIds(charger).join(',');
+    if (publishedShapes.get(identity) !== shape) {
+      publishedShapes.set(identity, shape);
+      await publishDevices({ onlyIfChanged: true });
+    }
+    statePublisher.enqueue(chargerStates(gladys, identity, charger));
+  }
+
+  /**
+   * Keeps the change stream up for as long as the integration runs. The stream
+   * ends on its own whenever the gateway sub-container restarts (an update, a
+   * crash, the reset_all action), so reconnecting is the normal path, not an
+   * error path - hence the plain warn and the fixed retry delay.
+   */
+  async function runEventStream() {
+    if (!eventStreamEnabled || eventStreamRunning) return;
+    eventStreamRunning = true;
+    try {
+      while (!stopped) {
+        const controller = new AbortController();
+        eventStreamAbort = controller;
+        try {
+          await streamGatewayEvents({
+            baseUrl: gatewayBaseUrl,
+            signal: controller.signal,
+            onEvent: (event) => {
+              handleGatewayChange(event).catch((err) => {
+                logger.warn('Failed to handle a gateway change event', err);
+              });
+            },
+          });
+        } catch (err) {
+          if (stopped) return;
+          logger.warn('Gateway event stream lost, reconnecting', err);
+        }
+        if (stopped) return;
+        await new Promise((resolve) => setTimeout(resolve, gatewayRetryDelayMs));
+      }
+    } finally {
+      eventStreamRunning = false;
+    }
   }
 
   // A charge point can connect at any time and the gateway has no way to push
@@ -352,22 +430,30 @@ export function registerHandlers(
         .catch(() => {});
     } finally {
       // Even if the steps above failed: the gateway may well come back on its
-      // own, and this is then what picks it up.
+      // own, and these are what pick it up.
       startDiscoveryRefresh();
+      runEventStream().catch((err) => logger.error('Gateway event stream stopped', err));
     }
   });
 
   // --- Graceful shutdown -------------------------------------------------------
   gladys.handleShutdown((signal) => {
     logger.info(`Received ${signal} -> graceful shutdown`);
+    stopped = true;
     if (discoveryTimer) {
       clearInterval(discoveryTimer);
       discoveryTimer = null;
     }
+    eventStreamAbort?.abort();
+    statePublisher.stop();
   });
 
-  // Lets a test drive one refresh tick without waiting on the real timer.
-  return { refreshDiscovery: () => publishDevices({ onlyIfChanged: true }) };
+  // Lets a test drive one tick, or one gateway event, without the real timer
+  // or a live stream.
+  return {
+    refreshDiscovery: () => publishDevices({ onlyIfChanged: true }),
+    handleGatewayChange,
+  };
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];

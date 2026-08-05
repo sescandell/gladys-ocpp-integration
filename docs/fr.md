@@ -133,6 +133,12 @@ Inactif ». Quand aucune session n'est en cours, l'état de charge affiche
 _Inactif_. Les deux fonctionnalités restent vides tant que la borne n'a pas
 rapporté son statut au moins une fois.
 
+Les valeurs se mettent à jour **au fil de l'eau**, en quelques secondes : le
+relais signale à l'intégration chaque changement qu'il observe, au lieu d'être
+interrogé à intervalles réguliers. Une borne qui se connecte pour la première
+fois apparaît elle aussi toute seule dans Découverte, sans attendre un
+rafraîchissement.
+
 ## Connecteurs multiples
 
 Une borne est un seul appareil dans Gladys, quel que soit son nombre de

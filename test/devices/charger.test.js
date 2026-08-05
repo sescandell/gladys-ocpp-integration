@@ -238,6 +238,15 @@ test('buildDevices: poll_frequency is always the fixed 60s value Gladys accepts'
   assert.equal(devices[0].poll_frequency, 60_000);
 });
 
+test('buildDevices: polling is explicitly enabled, not implied by poll_frequency', async () => {
+  // t_device.should_poll defaults to false and nothing derives it from
+  // poll_frequency: without this the device is created but never scheduled,
+  // so onPoll never runs and every feature stays empty forever.
+  const gladys = createFakeGladys();
+  const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
+  assert.equal(devices[0].should_poll, true);
+});
+
 test('buildDevices: each device carries its configured origin cloud URL as a param', async () => {
   const gladys = createFakeGladys();
   const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));

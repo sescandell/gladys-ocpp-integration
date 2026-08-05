@@ -49,7 +49,8 @@ Charge point A ─┐                     Charge point B ─┐
 ├─ src/
 │  ├─ config.js                      # config defaults + normalization (folds in `chargers`)
 │  ├─ chargers.js                    # free-config charger store: parse/serialize/upsert/remove
-│  ├─ gatewayClient.js               # HTTP client for the "gateway" sub-container (state, live map sync)
+│  ├─ gatewayClient.js               # HTTP client for the "gateway" sub-container (state, event stream, live map sync)
+│  ├─ stateSync.js                   # outbound state queue: coalescing + Gladys's 100/req, 300/min limits
 │  └─ devices/
 │     ├─ index.js                    #   registry (single blueprint, see below)
 │     └─ charger.js                  #   one device per configured charge point (connectors are features)
@@ -60,11 +61,12 @@ Charge point A ─┐                     Charge point B ─┐
 │  │  ├─ localMode.ts                #   synthesized "everything is fine" responses, no origin cloud yet
 │  │  ├─ originConnection.ts         #   generic path-segment vs. query-string identity addressing
 │  │  ├─ observe.ts                  #   OCPP message -> internal state updates
+│  │  ├─ changeFeed.ts               #   coalesced change notifications, pushed over SSE
 │  │  ├─ state.ts                    #   ChargerState / ConnectorState / StateStore
 │  │  ├─ meterValues.ts              #   OCPP MeterValues -> ConnectorState mapping
 │  │  ├─ ocpp16.ts                   #   OCPP 1.6 message types (TypeScript only)
 │  │  ├─ exchangeLog.ts              #   formats one relayed OCPP exchange as a stdout line
-│  │  └─ stateApi.ts                 #   internal-only GET /api/state, POST /api/chargers
+│  │  └─ stateApi.ts                 #   internal-only GET /api/state, GET /api/events, POST /api/chargers
 │  ├─ test/                          #   node:test, own package.json/tsconfig.json
 │  └─ Dockerfile                     #   sub-container image
 ├─ docs/
@@ -180,6 +182,38 @@ UI - a `config_schema` can't render this open-ended, per-charger data as a
 form field (Gladys config forms are a flat, fixed list of fields), and
 cramming it into the connection status message (see below) would mix
 business config into what reads as an operational/ops caption.
+
+## Live state, without polling the gateway
+
+The gateway sees every OCPP message as it happens, so waiting for a poll to
+find out about it made no sense. It publishes changes on
+`GET /api/events` (SSE), and the main container subscribes for as long as it
+runs (`streamGatewayEvents` in `src/gatewayClient.js`, reconnect loop in
+`index.js` - the stream ending is normal, that is what a gateway restart looks
+like from here).
+
+The subscription runs main container → gateway, not the reverse: the main
+container knows the gateway's fixed internal address, while nothing guarantees
+the gateway can address the main container. Each event carries the charge
+point's full observed state, so the usual case - a meter value on a known
+connector - costs no call back to the gateway; `index.js` only refreshes
+Discovery when an event brings a charge point or a connector never published
+before. `gateway/src/changeFeed.ts` coalesces bursts per identity, so a
+StatusNotification followed by MeterValues is one event, not two.
+
+**States are queued, never published straight through** (`src/stateSync.js`).
+Gladys accepts 100 states per request and 300 per minute per integration
+(`externalIntegration.saveStates.js`), and one connector can produce 6 states
+per observed message - enough for a single chatty charge point to exhaust the
+budget. The queue coalesces per feature, drops values Gladys already holds,
+spends a 300/minute budget mirroring the core's own window, and holds (never
+discards) the remainder until the window resets.
+
+Gladys's own polling stays enabled (`should_poll: true`, 60s) as a safety net:
+it costs nothing to keep, it covers a stream that died silently, and it keeps
+`poll_frequency` populated - which avoids an unguarded `devicesByPollFrequency`
+lookup in core's `device.create.js` that 500s when a device has a frequency but
+no polling.
 
 ## Generic origin-cloud identity addressing
 

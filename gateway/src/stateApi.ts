@@ -8,6 +8,11 @@
  *   gateway currently knows about (both configured/relayed and
  *   local-mode/unconfigured - see gateway.ts, they land in the same
  *   `StateStore`).
+ * - `GET /api/events` - SSE stream, one frame per observed change (see
+ *   `changeFeed.ts`). The main container subscribes to it so a status change
+ *   reaches Gladys in seconds instead of waiting for the next poll. The
+ *   subscription direction is deliberate: the main container knows the
+ *   gateway's fixed internal address, the reverse is guaranteed nowhere.
  * - `POST /api/chargers` - full replace of the live identity -> origin cloud
  *   URL map (see `chargerRegistry.ts`), called by the main container every
  *   time the set of configured charge points changes (the `add_charger`
@@ -24,16 +29,21 @@ import { createServer as createHttpServer, type Server } from 'node:http';
 import { text } from 'node:stream/consumers';
 import type { StateStore } from './state.ts';
 import type { ChargerRegistry } from './chargerRegistry.ts';
+import type { ChangeFeed } from './changeFeed.ts';
 
 /** The only surface stateApi.ts needs from a live charge-point connection. */
 export interface LocalClient {
   close(options?: { code?: number; reason?: string }): Promise<void>;
 }
 
+/** Keeps an idle stream alive through proxies, and makes a dead peer detectable. */
+const SSE_HEARTBEAT_MS = 20_000;
+
 export function createStateApiServer(
   store: StateStore,
   registry: ChargerRegistry,
   localClients: Map<string, LocalClient>,
+  changeFeed?: ChangeFeed,
 ): Server {
   return createHttpServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -41,6 +51,33 @@ export function createStateApiServer(
     if (req.method === 'GET' && url.pathname === '/api/state') {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ chargers: store.toJSON() }));
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/events') {
+      if (!changeFeed) {
+        res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('No change feed');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      // An immediate comment flushes the headers, so the subscriber knows it
+      // is connected without waiting for a first real change.
+      res.write(':subscribed\n\n');
+
+      const unsubscribe = changeFeed.subscribe((change) => {
+        res.write(`data: ${JSON.stringify(change)}\n\n`);
+      });
+      const heartbeat = setInterval(() => res.write(':ping\n\n'), SSE_HEARTBEAT_MS);
+      heartbeat.unref?.();
+      res.on('close', () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
       return;
     }
 
