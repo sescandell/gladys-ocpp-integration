@@ -8,25 +8,9 @@
   },
   "version": "0.5.2",
   "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.5.2",
-  "gladys_version": ">=4.84.0",
+  "gladys_version": ">=4.85.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
-  "transports": [
-    "local"
-  ],
-  "config_schema": [
-    {
-      "key": "intro",
-      "type": "section",
-      "label": {
-        "en": "How it works",
-        "fr": "Fonctionnement"
-      },
-      "description": {
-        "en": "This integration runs its own OCPP relay in a companion container, started automatically - check Supervision for the ready-to-use OCPP URL (ws://<your Gladys host>:<port>/). Point any charge point at it right away: the relay supervises it locally even before it has an origin cloud, and it shows up in Discovery as soon as it connects. Add it to Gladys from Discovery, then run the \"Add a charge point\" action below (pick it from the list + its origin cloud URL) whenever you are ready to route it to its real cloud instead - that one charge point reconnects automatically within a few seconds and switches into full relay mode. Its configured URL is then shown on its own device card, not listed here. Exposing the OCPP port makes the relay reachable on your LAN - read the documentation before installing.",
-        "fr": "Cette integration embarque son propre relais OCPP dans un sous-conteneur, demarre automatiquement - consultez Supervision pour l'URL OCPP prete a l'emploi (ws://<votre hote Gladys>:<port>/). Pointez n'importe quelle borne dessus tout de suite : le relais la supervise localement meme avant qu'elle ait un cloud d'origine, et elle apparait dans Decouverte des qu'elle se connecte. Ajoutez-la a Gladys depuis Decouverte, puis lancez l'action \"Ajouter une borne\" ci-dessous (choisissez-la dans la liste + son URL de cloud d'origine) quand vous etes pret a la router vers son vrai cloud - cette borne se reconnecte alors automatiquement en quelques secondes et bascule en mode relais complet. Son URL configuree est ensuite affichee sur sa propre fiche appareil, pas listee ici. Exposer le port OCPP rend le relais accessible sur votre reseau local - lisez la documentation avant d'installer."
-      }
-    }
-  ],
+  "transports": ["local"],
   "actions": [
     {
       "key": "add_charger",

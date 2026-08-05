@@ -69,7 +69,7 @@ Charge point A ─┐                     Charge point B ─┐
 │  └─ Dockerfile                     #   sub-container image
 ├─ docs/
 │  ├─ en.md / fr.md                  # user documentation (re-hosted by Gladys)
-├─ gladys-assistant-integration.json # manifest (config_schema + add_charger/reset_all actions + "gateway" sub-container)
+├─ gladys-assistant-integration.json # manifest (add_charger/reset_all actions + "gateway" sub-container, no config_schema)
 ├─ Dockerfile                        # main container image, Node 24 Alpine, read-only rootfs
 ├─ .github/workflows/                # CI: builds + publishes BOTH images (main + gateway)
 └─ cover.png                         # catalog cover, 800×534 px, ≤150 KB
@@ -86,7 +86,7 @@ origin cloud yet - genuinely automatic, the same reason any other
 integration's discovered devices show up.
 
 The origin cloud URL is attached separately via the `add_charger` manifest
-action - `config_schema` is a flat, fixed list of fields, it cannot represent
+action - a `config_schema` is a flat, fixed list of fields, it cannot represent
 "add as many charge points as you want", so the set lives in free internal
 config storage (`src/chargers.js`, key `chargers_json`) instead, pushed live
 to the gateway sub-container (`POST /api/chargers`, see
@@ -98,6 +98,11 @@ identity-keyed lookup of its own connections) - it reconnects and this time
 resolves to full relay mode. Removing a charge point's URL takes effect on
 its next reconnection, not retroactively (an already-relaying session isn't
 interrupted).
+
+The manifest declares **no `config_schema` at all**: there is nothing for
+the user to fill in, so the Configuration screen shows only the actions
+(plus the standard link to `docs/`, which Gladys renders whether or not a
+schema exists).
 
 The action picks the charge point through a `select` with `source:
 "devices"` - Gladys core fills that dropdown itself, so the user never
@@ -143,13 +148,35 @@ observes more via `StatusNotification`. Growing the feature list of an
 already-created device surfaces as an "Update" button in Gladys - the user
 stays in control of structural changes.
 
+Each connector reports 6 features: two enums from Gladys's
+**`charging-station`** category (`connector-status` and `charging-state`,
+core PR #2756) plus four **`energy-sensor`** measurements (power, current,
+voltage, total energy). The measurements are not
+`electrical-vehicle-charge`, a vehicle-side category: only
+`[energy-sensor, switch, teleinformation]` features are offered by Gladys's
+energy monitoring page, so this is what lets the totalizer be attached under
+the house meter as a sub-meter (`energy_parent_id`).
+
+OCPP 1.6 sends a single, more granular `ChargePointStatus`, so
+`src/devices/charger.js`'s `OCPP16_STATUS_MAP` splits it across the two
+enums following core's documented mapping - with one deviation: statuses
+outside a session (`Available`, `Reserved`, `Unavailable`, `Faulted`)
+publish `charging-state: IDLE` rather than nothing, since a Gladys feature
+holds its last value forever. An unmapped status (including the gateway's
+`Unknown` placeholder) publishes neither enum.
+
+The `charging-station` constants are hand-copied from Gladys core - the
+SDK's mirror (0.10.0) predates that merge. The manifest requires `>=4.85.0`
+accordingly: `t_device_feature.category`/`type` are DB ENUMs, so an older
+Gladys rejects these features at device creation.
+
 Each device also carries its configured origin cloud URL as a `param` (not
 a `feature` - it's config, not telemetry): Gladys renders a device's
 `params` as a plain read-only table on its card, in Discovery _before_
 creation and in the device list _after_, silently kept in sync on every
 re-publish (no "Update" click needed, unlike a features structure change).
 This is the only place a charge point's configured URL is surfaced in the
-UI - `config_schema` can't render this open-ended, per-charger data as a
+UI - a `config_schema` can't render this open-ended, per-charger data as a
 form field (Gladys config forms are a flat, fixed list of fields), and
 cramming it into the connection status message (see below) would mix
 business config into what reads as an operational/ops caption.

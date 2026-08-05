@@ -27,11 +27,9 @@ test('description stays within the store admission bounds (10-100 chars per lang
 });
 
 test('config_schema/action descriptions stay within the store admission bounds (<=1000 chars)', () => {
-  // Caught by the real store validator once (the intro section's
-  // description grew past 1000 chars while documenting the Supervision
-  // OCPP URL) - the store validator isn't wired into CI (only run
-  // manually), so guard it here too.
-  for (const field of manifest.config_schema) {
+  // The store validator isn't wired into CI (only run manually), and this
+  // bound was hit for real once.
+  for (const field of manifest.config_schema ?? []) {
     for (const [lang, text] of Object.entries(field.description ?? {})) {
       assert.ok(
         text.length <= 1000,
@@ -55,6 +53,12 @@ test('top-level shape', () => {
   assert.ok(manifest.docker_image.length > 0);
 });
 
+test('gladys_version requires the release that introduced the CHARGING_STATION category', () => {
+  // First release carrying core PRs #2756 (charging-station features) and
+  // #2779 (server-side validation of a `source: "devices"` select).
+  assert.equal(manifest.gladys_version, '>=4.85.0');
+});
+
 test('V1 is read-only: actions only manage charge point configuration and gateway state, never control a device', () => {
   assert.deepEqual(
     manifest.actions?.map((a) => a.key),
@@ -70,18 +74,11 @@ test('reset_all action: requires a confirmation field', () => {
   assert.equal(confirmField.required, true);
 });
 
-test('config_schema only has the intro section - no fixed per-charger fields, no other user-editable field', () => {
-  // Deliberately no "charger_1_identity"-style slots: the set of configured
-  // charge points is unbounded and managed entirely through the
-  // `add_charger` action + free internal config storage (src/chargers.js),
-  // not the generated form (config_schema is a flat, fixed list of fields -
-  // it cannot represent "add as many charge points as you want"). No
-  // poll_frequency either - removed as a user setting (Keep It Simple),
-  // fixed in code, see src/devices/charger.js's DEVICE_POLL_FREQUENCY_MS.
-  assert.deepEqual(
-    manifest.config_schema.map((f) => f.key),
-    ['intro'],
-  );
+test('no config_schema at all - nothing for the user to configure in the generated form', () => {
+  // The set of charge points is unbounded and lives in free internal config
+  // storage (src/chargers.js) driven by the add_charger action - a
+  // config_schema is a flat, fixed list of fields and cannot represent it.
+  assert.equal(manifest.config_schema, undefined);
 });
 
 test('add_charger action: device picker required, origin_cloud_url optional (empty = detach)', () => {
@@ -104,9 +101,13 @@ test('add_charger action: device picker required, origin_cloud_url optional (emp
   assert.equal(urlField.required, false);
 });
 
-test('section fields are purely presentational', () => {
-  const sections = manifest.config_schema.filter((f) => f.type === 'section');
-  assert.ok(sections.length > 0, 'the manifest has at least one intro section block');
+test('section fields, wherever they are declared, stay purely presentational', () => {
+  // Sections are allowed in an action's `fields` too, same rendering engine
+  // as config_schema.
+  const sections = [
+    ...(manifest.config_schema ?? []),
+    ...(manifest.actions ?? []).flatMap((a) => a.fields ?? []),
+  ].filter((f) => f.type === 'section');
   for (const section of sections) {
     // A section stores NO value: declaring `required`, `default` or
     // `placeholder` on it rejects the manifest, and its key must never leak

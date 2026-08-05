@@ -19,48 +19,46 @@ test('mapConnectorToStates: null/undefined connector -> no states', () => {
   assert.deepEqual(mapConnectorToStates(ids, 1, undefined), []);
 });
 
-test('mapConnectorToStates: status text is always published, scoped to the connector id', () => {
-  const states = mapConnectorToStates(ids, 1, { status: 'Available' });
-  const status = states.find((s) => s.device_feature_external_id === ids.feature('status:1'));
-  assert.equal(status.text, 'Available');
+// Reads the value of one feature out of a mapConnectorToStates() result.
+function stateOf(states, featureKey) {
+  return states.find((s) => s.device_feature_external_id === ids.feature(featureKey))?.state;
+}
 
-  const statesConnector2 = mapConnectorToStates(ids, 2, { status: 'Available' });
-  const statusConnector2 = statesConnector2.find(
-    (s) => s.device_feature_external_id === ids.feature('status:2'),
-  );
-  assert.equal(statusConnector2.text, 'Available');
+test('mapConnectorToStates: OCPP 1.6 status split across connector status + charging state', () => {
+  const expected = {
+    Available: [0, 4], // AVAILABLE   / IDLE
+    Preparing: [1, 1], // OCCUPIED    / EV_CONNECTED
+    Charging: [1, 0], // OCCUPIED     / CHARGING
+    SuspendedEVSE: [1, 3], // OCCUPIED / PAUSED_BY_CHARGER
+    SuspendedEV: [1, 2], // OCCUPIED   / PAUSED_BY_VEHICLE
+    Finishing: [1, 4], // OCCUPIED    / IDLE
+    Reserved: [2, 4], // RESERVED     / IDLE
+    Unavailable: [3, 4], // UNAVAILABLE / IDLE
+    Faulted: [4, 4], // FAULTED      / IDLE
+  };
+
+  for (const [status, [connectorStatus, chargingState]] of Object.entries(expected)) {
+    const states = mapConnectorToStates(ids, 1, { status });
+    assert.equal(stateOf(states, 'connector-status:1'), connectorStatus, `${status} connector`);
+    assert.equal(stateOf(states, 'charging-state:1'), chargingState, `${status} charging state`);
+  }
 });
 
-test('mapConnectorToStates: plugged/charging derived from status', () => {
-  const charging = mapConnectorToStates(ids, 1, { status: 'Charging' });
-  assert.equal(
-    charging.find((s) => s.device_feature_external_id === ids.feature('plugged:1')).state,
-    1,
-  );
-  assert.equal(
-    charging.find((s) => s.device_feature_external_id === ids.feature('charging:1')).state,
-    1,
-  );
+test('mapConnectorToStates: states are scoped to the connector id', () => {
+  const states = mapConnectorToStates(ids, 2, { status: 'Charging' });
+  assert.equal(stateOf(states, 'connector-status:2'), 1);
+  assert.equal(stateOf(states, 'charging-state:2'), 0);
+  assert.equal(stateOf(states, 'connector-status:1'), undefined);
+});
 
-  const available = mapConnectorToStates(ids, 1, { status: 'Available' });
-  assert.equal(
-    available.find((s) => s.device_feature_external_id === ids.feature('plugged:1')).state,
-    0,
-  );
-  assert.equal(
-    available.find((s) => s.device_feature_external_id === ids.feature('charging:1')).state,
-    0,
-  );
-
-  const preparing = mapConnectorToStates(ids, 1, { status: 'Preparing' });
-  assert.equal(
-    preparing.find((s) => s.device_feature_external_id === ids.feature('plugged:1')).state,
-    1,
-  );
-  assert.equal(
-    preparing.find((s) => s.device_feature_external_id === ids.feature('charging:1')).state,
-    0,
-  );
+test('mapConnectorToStates: an unknown status publishes neither enum feature', () => {
+  // "Unknown" is what the gateway seeds a connector with before its first
+  // StatusNotification.
+  for (const status of ['Unknown', 'SomeVendorStatus', undefined]) {
+    const states = mapConnectorToStates(ids, 1, { status });
+    assert.equal(stateOf(states, 'connector-status:1'), undefined, `${status}`);
+    assert.equal(stateOf(states, 'charging-state:1'), undefined, `${status}`);
+  }
 });
 
 test('mapConnectorToStates: numeric measurements converted to the right unit', () => {
@@ -152,7 +150,7 @@ test('buildDevices: a configured charge point is offered even when the gateway i
     ['ev-charger:CP-1'],
   );
   // Seeded with the default connector 1 - nothing was ever observed.
-  assert.equal(devices[0].features.length, 7);
+  assert.equal(devices[0].features.length, 6);
 });
 
 test('buildDevices: a configured charge point that has never connected is still offered, seeded with connector 1', async () => {
@@ -164,7 +162,7 @@ test('buildDevices: a configured charge point that has never connected is still 
   );
   // Fixed at Gladys's "every minute" tier - no longer user-configurable.
   assert.equal(devices[0].poll_frequency, 60_000);
-  assert.equal(devices[0].features.length, 7);
+  assert.equal(devices[0].features.length, 6);
   assert.ok(devices[0].features.every((f) => f.external_id.endsWith(':1')));
 });
 
@@ -177,10 +175,60 @@ test('buildDevices: every feature declares both min and max (Gladys core require
   // the real device-creation DB insert enforces it.
   const gladys = createFakeGladys();
   const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
-  assert.equal(devices[0].features.length, 7);
+  assert.equal(devices[0].features.length, 6);
   for (const feature of devices[0].features) {
     assert.equal(typeof feature.min, 'number', `${feature.name} must declare a numeric min`);
     assert.equal(typeof feature.max, 'number', `${feature.name} must declare a numeric max`);
+  }
+});
+
+test("buildDevices: connector state uses Gladys's CHARGING_STATION category, bounded to its enums", async () => {
+  // Hand-copied strings (the SDK doesn't export the category yet) checked
+  // against DB ENUMs at device creation: a typo is a 422, not a warning.
+  const gladys = createFakeGladys();
+  const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
+  const byExternalId = (key) =>
+    devices[0].features.find((f) => f.external_id.endsWith(`:${key}:1`));
+
+  const connectorStatus = byExternalId('connector-status');
+  assert.equal(connectorStatus.category, 'charging-station');
+  assert.equal(connectorStatus.type, 'connector-status');
+  assert.equal(connectorStatus.min, 0);
+  assert.equal(connectorStatus.max, 4); // AVAILABLE..FAULTED
+
+  const chargingState = byExternalId('charging-state');
+  assert.equal(chargingState.category, 'charging-station');
+  assert.equal(chargingState.type, 'charging-state');
+  assert.equal(chargingState.min, 0);
+  assert.equal(chargingState.max, 5); // CHARGING..DISCHARGING
+
+  // The text/binary trio these two replace must not come back alongside.
+  for (const gone of ['status', 'plugged', 'charging']) {
+    assert.equal(byExternalId(gone), undefined, `${gone} feature must not be published anymore`);
+  }
+});
+
+test("buildDevices: the measurements are ENERGY_SENSOR, so they reach Gladys's energy monitoring", async () => {
+  // That page filters on both category ([energy-sensor, switch,
+  // teleinformation]) and type - any other category silently drops the
+  // totalizer from the sub-meter picker.
+  const gladys = createFakeGladys();
+  const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
+  const byExternalId = (key) =>
+    devices[0].features.find((f) => f.external_id.endsWith(`:${key}:1`));
+
+  const expected = {
+    power: { type: 'power', unit: 'kilowatt' },
+    current: { type: 'current', unit: 'ampere' },
+    voltage: { type: 'voltage', unit: 'volt' },
+    energy: { type: 'energy', unit: 'kilowatt-hour' },
+  };
+  for (const [key, { type, unit }] of Object.entries(expected)) {
+    const feature = byExternalId(key);
+    assert.ok(feature, `${key} feature must be published`);
+    assert.equal(feature.category, 'energy-sensor', `${key} category`);
+    assert.equal(feature.type, type, `${key} type`);
+    assert.equal(feature.unit, unit, `${key} unit`);
   }
 });
 
@@ -218,7 +266,7 @@ test('buildDevices: one device for the charge point, features for every physical
   assert.equal(devices.length, 1);
   const [device] = devices;
   assert.equal(device.external_id, 'ev-charger:CP-1');
-  assert.equal(device.features.length, 14); // 7 per connector x 2 connectors
+  assert.equal(device.features.length, 12); // 6 per connector x 2 connectors
   assert.ok(device.features.some((f) => f.external_id.endsWith(':1')));
   assert.ok(device.features.some((f) => f.external_id.endsWith(':2')));
   assert.ok(device.features.every((f) => !f.external_id.endsWith(':0')));
@@ -229,7 +277,7 @@ test('buildDevices: feature set grows as new connectors are observed (re-publish
   const first = await charger.buildDevices(gladys, config, async () => ({
     chargers: { 'CP-1': { identity: 'CP-1', connectors: { 1: { status: 'Available' } } } },
   }));
-  assert.equal(first[0].features.length, 7);
+  assert.equal(first[0].features.length, 6);
 
   const second = await charger.buildDevices(gladys, config, async () => ({
     chargers: {
@@ -239,7 +287,7 @@ test('buildDevices: feature set grows as new connectors are observed (re-publish
       },
     },
   }));
-  assert.equal(second[0].features.length, 14);
+  assert.equal(second[0].features.length, 12);
 });
 
 test('buildDevices: devices from TWO different configured charge points, no cross-talk', async () => {
@@ -263,12 +311,12 @@ test('buildDevices: devices from TWO different configured charge points, no cros
   assert.deepEqual(externalIds, ['ev-charger:CP-VENDOR-A', 'ev-charger:CP-VENDOR-B']);
   const deviceA = devices.find((d) => d.external_id === 'ev-charger:CP-VENDOR-A');
   assert.match(deviceA.name, /CP-VENDOR-A/);
-  assert.equal(deviceA.features.length, 7);
+  assert.equal(deviceA.features.length, 6);
   assert.deepEqual(deviceA.params, [
     { name: 'Origin cloud URL', value: 'wss://cloud-a.example.com/ocpp' },
   ]);
   const deviceB = devices.find((d) => d.external_id === 'ev-charger:CP-VENDOR-B');
-  assert.equal(deviceB.features.length, 14);
+  assert.equal(deviceB.features.length, 12);
   assert.deepEqual(deviceB.params, [
     { name: 'Origin cloud URL', value: 'wss://cloud-b.example.com/ocpp' },
   ]);

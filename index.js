@@ -162,9 +162,10 @@ export function registerHandlers(gladys, { gatewayBaseUrl, gatewayRetry = {} } =
     await blueprint.onPoll(gladys, config, device);
   });
 
-  // --- Configuration updated by the user (the config form is just a static --
-  // --- info section today - no user-editable value; the set of charge -------
-  // --- points is managed entirely through the add_charger action, below) ----
+  // --- Configuration updated (the manifest declares no config_schema at ------
+  // --- all - there is no generated form and nothing for the user to fill -----
+  // --- in; the set of charge points is managed entirely through the ----------
+  // --- add_charger action below, whose own setConfig lands here) -------------
   gladys.onConfigUpdated(async (newConfig) => {
     logger.info('onConfigUpdated -> new configuration received');
     config = normalizeConfig(newConfig);

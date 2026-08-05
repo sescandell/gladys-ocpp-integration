@@ -1,13 +1,13 @@
 // -----------------------------------------------------------------------------
 // Integration configuration.
 //
-// Filled in by the user in Gladys, from the `config_schema` declared in
-// `gladys-assistant-integration.json` (today, just a static info section -
-// there is no user-editable value there: poll_frequency was removed as a
-// setting, see src/devices/charger.js's DEVICE_POLL_FREQUENCY_MS). The SDK
-// still fetches this (`gladys.getConfig()`) and notifies changes through
-// `gladys.onConfigUpdated()`, since the set of configured charge points
-// lives in the same config object, just outside config_schema.
+// NOT filled in by the user: the manifest declares no `config_schema` at
+// all, so Gladys generates no form and there is nothing to type in (
+// poll_frequency was never a setting either, see src/devices/charger.js's
+// DEVICE_POLL_FREQUENCY_MS). The SDK still fetches this
+// (`gladys.getConfig()`) and notifies changes through
+// `gladys.onConfigUpdated()`, because the set of configured charge points
+// lives in the same config object, just outside any schema.
 //
 // The set of configured charge points (identity -> origin cloud URL) is NOT
 // part of the schema either (see src/chargers.js) - it is folded into the

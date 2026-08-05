@@ -8,9 +8,9 @@ configuring that the user needs it most.
 ## Scope of this version
 
 **Read-only supervision, nothing else.** This integration observes any
-number of OCPP 1.6 EV charge points and shows their state in Gladys (status,
-plugged, charging, power, current, voltage, total energy) — there is no way
-to start, stop, or limit a charge from Gladys yet.
+number of OCPP 1.6 EV charge points and shows their state in Gladys
+(connector status, charging state, power, current, voltage, total energy) —
+there is no way to start, stop, or limit a charge from Gladys yet.
 
 ## How it works
 
@@ -26,7 +26,11 @@ nothing about any vendor's service is changed or replaced. The relay only
 _observes_ what passes through it to build the state shown in Gladys; it
 never invents or withholds anything on the wire, in either mode.
 
-## Prerequisite
+## Prerequisites
+
+**Gladys 4.85.0 or later.** The charge point state is published using
+Gladys's charging-station device features, which older versions don't know
+about (they would refuse to create the device).
 
 Each charge point's vendor app or portal must let you view and change the
 OCPP server URL it connects to. Not every vendor exposes this — if yours
@@ -53,8 +57,8 @@ address>:<port>/` — the port is already filled in for you, just replace
    the **same for every charge point**.
 3. In the charge point's vendor app, point its OCPP server URL there. It
    connects right away and shows up in the **Discovery** tab — its real
-   status (plugged, charging, etc.) is already supervised even though it
-   isn't relayed to any cloud yet.
+   status (available, occupied, charging, etc.) is already supervised even
+   though it isn't relayed to any cloud yet.
 4. **Add it to Gladys** from the Discovery tab. Beyond creating the device,
    this is what puts the charge point in the picker used by the next step.
 5. Whenever you're ready to route it to its real cloud instead: run the
@@ -99,11 +103,29 @@ afterwards and reappears in Discovery as it did the first time. It does
 **not** delete devices you already created in Gladys — remove those
 manually from the device list if you no longer want them.
 
+## What you see on a charge point
+
+Each connector reports two state features, plus its measurements (power,
+current, voltage, total energy):
+
+- **Status** — what the connector itself is doing: _Available_, _Occupied_,
+  _Reserved_, _Unavailable_, _Faulted_.
+- **Charging state** — what the session is doing: _Charging_, _Vehicle
+  connected_, _Paused (vehicle)_, _Paused (charger)_, _Idle_.
+
+OCPP 1.6 charge points report a single, more detailed status, which is split
+across those two: `Preparing` shows as "Occupied / Vehicle connected",
+`Charging` as "Occupied / Charging", `SuspendedEV` and `SuspendedEVSE` as
+"Occupied / Paused (vehicle)" and "Occupied / Paused (charger)", and
+`Finishing` as "Occupied / Idle". When no session is in progress, the
+charging state reads _Idle_. Both features stay empty until the charge point
+has reported its status at least once.
+
 ## Multiple connectors
 
 A charge point is one device in Gladys, whatever its number of physical
 connectors. It starts with one connector's worth of features (status,
-plugged, charging, power, current, voltage, energy); if it has more than
+charging state, power, current, voltage, energy); if it has more than
 one physical connector, the extra ones appear as additional features
 ("Connector 2 - ...", etc.) once the gateway has actually seen them report
 their status at least once. If you've already created the device, Gladys

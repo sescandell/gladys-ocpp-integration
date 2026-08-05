@@ -24,7 +24,7 @@
 // charge point) - not to make it appear here at all.
 //
 // A charge point can have several physical connectors: each one becomes a
-// small group of features on the SAME device (`Connector <n> - <label>`),
+// small group of 6 features on the SAME device (`Connector <n> - <label>`),
 // not a separate device - `buildDevices()` seeds connector 1 by default
 // (the OCPP-conventional first, and only, connector on the vast majority of
 // real hardware) so the device has something to show immediately, then
@@ -55,24 +55,65 @@ const DEVICE_TYPE = 'ev-charger';
 const logger = createLogger({ name: DEVICE_TYPE });
 
 const FEATURE = {
-  STATUS: 'status',
-  PLUGGED: 'plugged',
-  CHARGING: 'charging',
+  CONNECTOR_STATUS: 'connector-status',
+  CHARGING_STATE: 'charging-state',
   POWER: 'power',
   CURRENT: 'current',
   VOLTAGE: 'voltage',
   ENERGY: 'energy',
 };
 
-// OCPP 1.6 StatusNotification values meaning "cable plugged in" - anything
-// else (Available, Unavailable, Faulted) means unplugged.
-const PLUGGED_STATUSES = new Set([
-  'Preparing',
-  'Charging',
-  'SuspendedEV',
-  'SuspendedEVSE',
-  'Finishing',
-]);
+// Hand-copied from Gladys core's server/utils/constants.js (>= 4.85.0): the
+// SDK's constants mirror (0.10.0) predates the category and doesn't export
+// it yet. Swap for DEVICE_FEATURE_CATEGORIES.CHARGING_STATION & co. once it
+// resyncs.
+const CHARGING_STATION_CATEGORY = 'charging-station';
+const CHARGING_STATION_TYPES = {
+  CONNECTOR_STATUS: 'connector-status',
+  CHARGING_STATE: 'charging-state',
+};
+const CONNECTOR_STATUS = {
+  AVAILABLE: 0,
+  OCCUPIED: 1,
+  RESERVED: 2,
+  UNAVAILABLE: 3,
+  FAULTED: 4,
+};
+const CHARGING_STATE = {
+  CHARGING: 0,
+  EV_CONNECTED: 1,
+  PAUSED_BY_VEHICLE: 2,
+  PAUSED_BY_CHARGER: 3,
+  IDLE: 4,
+  DISCHARGING: 5,
+};
+
+// Splits OCPP 1.6's single ChargePointStatus into Gladys's two features,
+// following the mapping documented in core's constants.js.
+// `chargingState: null` = no session in progress -> published as IDLE, since
+// a Gladys feature holds its last value forever (a frozen "Charging" on an
+// unplugged connector would be wrong). An unlisted status (including the
+// gateway's "Unknown" placeholder) publishes neither feature.
+const OCPP16_STATUS_MAP = {
+  Available: { connectorStatus: CONNECTOR_STATUS.AVAILABLE, chargingState: null },
+  Preparing: {
+    connectorStatus: CONNECTOR_STATUS.OCCUPIED,
+    chargingState: CHARGING_STATE.EV_CONNECTED,
+  },
+  Charging: { connectorStatus: CONNECTOR_STATUS.OCCUPIED, chargingState: CHARGING_STATE.CHARGING },
+  SuspendedEVSE: {
+    connectorStatus: CONNECTOR_STATUS.OCCUPIED,
+    chargingState: CHARGING_STATE.PAUSED_BY_CHARGER,
+  },
+  SuspendedEV: {
+    connectorStatus: CONNECTOR_STATUS.OCCUPIED,
+    chargingState: CHARGING_STATE.PAUSED_BY_VEHICLE,
+  },
+  Finishing: { connectorStatus: CONNECTOR_STATUS.OCCUPIED, chargingState: CHARGING_STATE.IDLE },
+  Reserved: { connectorStatus: CONNECTOR_STATUS.RESERVED, chargingState: null },
+  Unavailable: { connectorStatus: CONNECTOR_STATUS.UNAVAILABLE, chargingState: null },
+  Faulted: { connectorStatus: CONNECTOR_STATUS.FAULTED, chargingState: null },
+};
 
 // OCPP connector 0 represents the charge point as a whole, never a physical
 // connector - always excluded from the feature set.
@@ -87,10 +128,9 @@ const DEFAULT_CONNECTOR_ID = 1;
 // rejects (and fails the ENTIRE publishDiscoveredDevices call, for every
 // device in the batch) any value other than a few exact milliseconds,
 // verified against server/utils/constants.js's DEVICE_POLL_FREQUENCIES
-// (1000, 2000, 10000, 15000, 30000, 60000). No longer user-configurable
-// (Keep It Simple - removed from gladys-assistant-integration.json's
-// config_schema), so this is just a literal picked from that fixed set,
-// Gladys's "every minute" tier.
+// (1000, 2000, 10000, 15000, 30000, 60000). Not user-configurable (Keep It
+// Simple - the manifest declares no config_schema at all), so this is just a
+// literal picked from that fixed set, Gladys's "every minute" tier.
 const DEVICE_POLL_FREQUENCY_MS = 60_000;
 
 /**
@@ -101,7 +141,7 @@ const DEVICE_POLL_FREQUENCY_MS = 60_000;
  * @param {import('@gladysassistant/integration-sdk').DeviceExternalIds} ids
  * @param {number} connectorId
  * @param {object|null} connector ConnectorState from the gateway (or null/undefined)
- * @returns {Array<{device_feature_external_id: string, state?: number, text?: string}>}
+ * @returns {Array<{device_feature_external_id: string, state: number}>}
  */
 export function mapConnectorToStates(ids, connectorId, connector) {
   if (!connector) return [];
@@ -115,12 +155,11 @@ export function mapConnectorToStates(ids, connectorId, connector) {
     });
   };
 
-  states.push({
-    device_feature_external_id: ids.feature(`${FEATURE.STATUS}:${connectorId}`),
-    text: connector.status ?? 'Unknown',
-  });
-  push(FEATURE.PLUGGED, PLUGGED_STATUSES.has(connector.status) ? 1 : 0);
-  push(FEATURE.CHARGING, connector.status === 'Charging' ? 1 : 0);
+  const mapped = OCPP16_STATUS_MAP[connector.status];
+  if (mapped) {
+    push(FEATURE.CONNECTOR_STATUS, mapped.connectorStatus);
+    push(FEATURE.CHARGING_STATE, mapped.chargingState ?? CHARGING_STATE.IDLE);
+  }
 
   if (typeof connector.powerActiveImportW === 'number') {
     push(FEATURE.POWER, Math.round((connector.powerActiveImportW / 1000) * 100) / 100);
@@ -143,51 +182,38 @@ function buildConnectorFeatures(ids, connectorId) {
   return [
     {
       name: label('Status'),
-      external_id: ids.feature(`${FEATURE.STATUS}:${connectorId}`),
-      category: DEVICE_FEATURE_CATEGORIES.TEXT,
-      type: DEVICE_FEATURE_TYPES.TEXT.TEXT,
-      // Gladys core requires min/max on EVERY feature regardless of
-      // category (t_device_feature.min/max are NOT NULL at the DB layer,
-      // server/models/device_feature.js) - meaningless for a text value
-      // (it publishes to last_value_string, not the numeric last_value
-      // these bound), but still mandatory. Caught for real: device
-      // creation 422s with "min/max cannot be null" the moment the user
-      // clicks "Add to Gladys", since neither the SDK nor
-      // publishDiscoveredDevices validate this - only the actual create
-      // endpoint's DB insert does.
+      external_id: ids.feature(`${FEATURE.CONNECTOR_STATUS}:${connectorId}`),
+      category: CHARGING_STATION_CATEGORY,
+      type: CHARGING_STATION_TYPES.CONNECTOR_STATUS,
+      // min/max are NOT NULL in t_device_feature and only enforced by the
+      // device-creation insert (a missing one 422s on "Add to Gladys", not
+      // at discovery). Bounds here are the enum's own range.
       min: 0,
-      max: 0,
+      max: 4,
       read_only: true,
       has_feedback: false,
       keep_history: true,
     },
     {
-      name: label('Plugged'),
-      external_id: ids.feature(`${FEATURE.PLUGGED}:${connectorId}`),
-      category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
-      type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.PLUGGED,
+      name: label('Charging state'),
+      external_id: ids.feature(`${FEATURE.CHARGING_STATE}:${connectorId}`),
+      category: CHARGING_STATION_CATEGORY,
+      type: CHARGING_STATION_TYPES.CHARGING_STATE,
       min: 0,
-      max: 1,
+      max: 5,
       read_only: true,
       has_feedback: false,
       keep_history: true,
     },
-    {
-      name: label('Charging'),
-      external_id: ids.feature(`${FEATURE.CHARGING}:${connectorId}`),
-      category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
-      type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_ON,
-      min: 0,
-      max: 1,
-      read_only: true,
-      has_feedback: false,
-      keep_history: true,
-    },
+    // ENERGY_SENSOR, not ELECTRICAL_VEHICLE_CHARGE (a vehicle-side
+    // category): only [energy-sensor, switch, teleinformation] categories
+    // are offered by Gladys's energy monitoring page, so this is what lets
+    // the totalizer be attached under the house meter (energy_parent_id).
     {
       name: label('Charging power'),
       external_id: ids.feature(`${FEATURE.POWER}:${connectorId}`),
-      category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
-      type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_POWER,
+      category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
+      type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.POWER,
       unit: DEVICE_FEATURE_UNITS.KILOWATT,
       min: 0,
       max: 1000, // 1 MW headroom - generous even for ultra-fast DC charging
@@ -198,8 +224,8 @@ function buildConnectorFeatures(ids, connectorId) {
     {
       name: label('Charging current'),
       external_id: ids.feature(`${FEATURE.CURRENT}:${connectorId}`),
-      category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
-      type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_CURRENT,
+      category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
+      type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.CURRENT,
       unit: DEVICE_FEATURE_UNITS.AMPERE,
       min: 0,
       max: 1000,
@@ -210,8 +236,8 @@ function buildConnectorFeatures(ids, connectorId) {
     {
       name: label('Voltage'),
       external_id: ids.feature(`${FEATURE.VOLTAGE}:${connectorId}`),
-      category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
-      type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_VOLTAGE,
+      category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
+      type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.VOLTAGE,
       unit: DEVICE_FEATURE_UNITS.VOLT,
       min: 0,
       max: 1000, // covers DC fast-charging voltages, well above any AC use
@@ -222,8 +248,8 @@ function buildConnectorFeatures(ids, connectorId) {
     {
       name: label('Total energy'),
       external_id: ids.feature(`${FEATURE.ENERGY}:${connectorId}`),
-      category: DEVICE_FEATURE_CATEGORIES.ELECTRICAL_VEHICLE_CHARGE,
-      type: DEVICE_FEATURE_TYPES.ELECTRICAL_VEHICLE_CHARGE.CHARGE_ENERGY_ADDED_TOTAL,
+      category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
+      type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.ENERGY,
       unit: DEVICE_FEATURE_UNITS.KILOWATT_HOUR,
       min: 0,
       max: 1_000_000, // lifetime totalizer, never resets - needs real headroom

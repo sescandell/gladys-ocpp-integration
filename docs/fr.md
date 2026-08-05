@@ -9,9 +9,9 @@ c'est au moment de configurer que l'utilisateur en a le plus besoin.
 
 **Supervision en lecture seule, rien d'autre.** Cette intégration observe un
 nombre quelconque de bornes de recharge OCPP 1.6 et affiche leur état dans
-Gladys (statut, branchée, en charge, puissance, courant, tension, énergie
-totale) — il n'est pas encore possible de démarrer, arrêter ou limiter une
-charge depuis Gladys.
+Gladys (statut du connecteur, état de charge, puissance, courant, tension,
+énergie totale) — il n'est pas encore possible de démarrer, arrêter ou
+limiter une charge depuis Gladys.
 
 ## Fonctionnement
 
@@ -30,6 +30,10 @@ Gladys ; il n'invente ni ne retient jamais rien sur le fil, dans aucun des
 deux modes.
 
 ## Prérequis
+
+**Gladys 4.85.0 ou ultérieur.** L'état des bornes est publié via les
+fonctionnalités « borne de recharge » de Gladys, que les versions
+antérieures ne connaissent pas (elles refuseraient de créer l'appareil).
 
 L'application ou le portail de chaque borne doit permettre de consulter et
 de modifier l'URL du serveur OCPP auquel elle se connecte. Tous les
@@ -58,8 +62,9 @@ Gladys>:<port>/` — le port est déjà rempli pour vous, il ne reste qu'à
    Cette URL est **la même pour toutes les bornes**.
 3. Dans l'application de la borne, faites pointer son URL de serveur OCPP
    vers cette adresse. Elle se connecte tout de suite et apparaît dans
-   l'onglet **Découverte** — son statut réel (branchée, en charge, etc.) est
-   déjà supervisé même si elle n'est pas encore relayée vers un cloud.
+   l'onglet **Découverte** — son statut réel (disponible, occupée, en
+   charge, etc.) est déjà supervisé même si elle n'est pas encore relayée
+   vers un cloud.
 4. **Ajoutez-la à Gladys** depuis l'onglet Découverte. Au-delà de créer
    l'appareil, c'est ce qui fait entrer la borne dans la liste déroulante
    utilisée à l'étape suivante.
@@ -109,11 +114,30 @@ comme lors de sa première connexion. Elle ne supprime **pas** les appareils
 déjà créés dans Gladys — retirez-les manuellement de la liste des appareils
 si vous n'en voulez plus.
 
+## Ce que vous voyez sur une borne
+
+Chaque connecteur remonte deux fonctionnalités d'état, en plus de ses
+mesures (puissance, courant, tension, énergie totale) :
+
+- **Statut** — ce que fait le connecteur lui-même : _Disponible_, _Occupé_,
+  _Réservé_, _Indisponible_, _En défaut_.
+- **État de charge** — ce que fait la session : _En charge_, _Véhicule
+  connecté_, _En pause (véhicule)_, _En pause (borne)_, _Inactif_.
+
+Les bornes OCPP 1.6 rapportent un statut unique, plus détaillé, qui est
+réparti entre ces deux fonctionnalités : `Preparing` devient « Occupé /
+Véhicule connecté », `Charging` devient « Occupé / En charge »,
+`SuspendedEV` et `SuspendedEVSE` deviennent « Occupé / En pause (véhicule) »
+et « Occupé / En pause (borne) », et `Finishing` devient « Occupé /
+Inactif ». Quand aucune session n'est en cours, l'état de charge affiche
+_Inactif_. Les deux fonctionnalités restent vides tant que la borne n'a pas
+rapporté son statut au moins une fois.
+
 ## Connecteurs multiples
 
 Une borne est un seul appareil dans Gladys, quel que soit son nombre de
 connecteurs physiques. Elle démarre avec les fonctionnalités d'un seul
-connecteur (statut, branchée, en charge, puissance, courant, tension,
+connecteur (statut, état de charge, puissance, courant, tension,
 énergie) ; si elle possède plusieurs connecteurs physiques, les
 supplémentaires apparaissent comme fonctionnalités additionnelles
 ("Connecteur 2 - ...", etc.) une fois que le relais les a réellement vus
