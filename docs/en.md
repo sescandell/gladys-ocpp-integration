@@ -42,38 +42,30 @@ you ever want to stop using this integration for that charger.
 
 ## Setup
 
-A charge point doesn't need any configuration to connect: point it at the
-relay whenever you like and it shows up in Discovery straight away, already
-supervised. Attaching its origin cloud comes later, and does require the
-charge point to have been added to Gladys first (step 4 below) — that's how
-the picker in the action gets its list.
+Five steps, once per charge point. Nothing is lost along the way: the charge
+point keeps its own connection to the vendor's cloud, Gladys simply sits in
+the middle and watches.
 
-1. Install the integration — its relay starts automatically, no
-   configuration needed yet.
-2. Open the integration's **Supervision** screen: the connection status
-   shows a ready-to-use OCPP URL, `ws://<this Gladys host's LAN
-address>:<port>/` — the port is already filled in for you, just replace
-   the placeholder with this Gladys host's actual LAN address. This URL is
-   the **same for every charge point**.
-3. In the charge point's vendor app, point its OCPP server URL there. It
-   connects right away and shows up in the **Discovery** tab — its real
-   status (available, occupied, charging, etc.) is already supervised even
-   though it isn't relayed to any cloud yet.
-4. **Add it to Gladys** from the Discovery tab. Beyond creating the device,
-   this is what puts the charge point in the picker used by the next step.
-5. Whenever you're ready to route it to its real cloud instead: run the
-   **"Add a charge point"** action (Configuration screen), **pick the charge
-   point from the list**, and enter the **origin cloud URL** exactly as
-   shown by the vendor app — including any trailing query string some
-   vendors use (e.g. ending in `?sn=`). Any such quirk only concerns the
-   relay's outbound connection to that vendor's cloud — it is invisible to
-   the charge point itself. The charge point reconnects automatically within
-   a few seconds and starts relaying instead of just being supervised
-   locally. Its configured origin cloud URL is then shown right on its device
-   card — that's the only place to check it, there is no list of configured
-   charge points anywhere else.
-6. Repeat for every other charge point you want relayed — same URL, its own
-   origin cloud URL, even a different vendor.
+1. **Write down the OCPP server URL** your charge point currently uses, from
+   its vendor app. This is your only way back to the vendor's cloud — keep
+   it somewhere safe.
+2. **Point the charge point at Gladys**: in that same app, replace the URL
+   with the one shown on the integration's **Supervision** screen —
+   `ws://<your Gladys address>:<port>/`. The port is filled in for you;
+   the address is the one you use to reach Gladys. The same URL works for
+   **every** charge point.
+3. **Add it to Gladys**: it connects immediately and appears in the
+   **Discovery** tab, already supervised. Add it from there.
+4. **Give it back its cloud**: on the Configuration screen, run the
+   **"Add a charge point"** action, pick it from the list, and paste the URL
+   from step 1 — exactly as the vendor app showed it, including any trailing
+   query string some vendors use (e.g. ending in `?sn=`).
+5. **Done.** The charge point reconnects on its own within seconds and
+   carries on talking to its vendor's cloud exactly as before, through
+   Gladys — which now follows it live.
+
+Repeat for every other charge point: same Gladys URL, its own vendor URL,
+even a different vendor.
 
 To fix a mistake or change a charge point's origin cloud URL, run the action
 again for the same charge point with the corrected URL (check its current
@@ -85,23 +77,17 @@ keeps relaying through its current connection until then).
 If you **delete** a charge point's device from Gladys while it still has an
 origin cloud configured, it disappears from the picker and the action can no
 longer change it — the relay keeps using that cloud. Add the device back
-from Discovery to regain control of it, or use the reset below.
+from Discovery to regain control of it.
 
-## Starting over (debug)
+## Starting over
 
-Uninstalling and reinstalling the integration is the clean way to start
-completely fresh: it removes every device it created, its stored
-configuration, and the relay's own container and data — nothing is left
-behind.
+Uninstalling the integration removes everything it created: its devices, its
+stored configuration, and the relay's own container and data. Nothing is left
+behind, so reinstalling starts genuinely fresh.
 
-To reset without a full reinstall (e.g. while testing), run the **"Reset
-everything (debug)"** action (Configuration screen, type `RESET` to
-confirm). It clears every configured charge point and restarts the relay
-container, wiping its observed state (connectors, live transactions,
-history) — every charge point, configured or not, has to reconnect
-afterwards and reappears in Discovery as it did the first time. It does
-**not** delete devices you already created in Gladys — remove those
-manually from the device list if you no longer want them.
+To go back to your vendor's cloud directly, put the URL you noted in step 1
+back into the charge point's app — it stops going through Gladys at its next
+reconnection.
 
 ## What you see on a charge point
 

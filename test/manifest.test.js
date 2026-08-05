@@ -64,26 +64,24 @@ test('gladys_version stays at the last released version, not the one the feature
   assert.equal(manifest.gladys_version, '>=4.84.0');
 });
 
-test('V1 is read-only: actions only manage charge point configuration and gateway state, never control a device', () => {
+test('V1 is read-only: the only action attaches an origin cloud, it never controls a device', () => {
   assert.deepEqual(
     manifest.actions?.map((a) => a.key),
-    ['add_charger', 'reset_all'],
+    ['add_charger'],
   );
 });
 
-test('reset_all action: requires a confirmation field', () => {
-  const action = manifest.actions.find((a) => a.key === 'reset_all');
-  assert.ok(action, 'reset_all must be declared');
-  const confirmField = action.fields.find((f) => f.key === 'confirm');
-  assert.ok(confirmField, 'confirm field must be declared');
-  assert.equal(confirmField.required, true);
-});
-
-test('no config_schema at all - nothing for the user to configure in the generated form', () => {
+test('config_schema holds the walkthrough and nothing else - no field stores a value', () => {
   // The set of charge points is unbounded and lives in free internal config
   // storage (src/chargers.js) driven by the add_charger action - a
   // config_schema is a flat, fixed list of fields and cannot represent it.
-  assert.equal(manifest.config_schema, undefined);
+  // What is left is the one thing a form is good at here: telling the user
+  // what to do, on the screen where they do it.
+  assert.deepEqual(
+    manifest.config_schema.map((f) => f.key),
+    ['how_to'],
+  );
+  assert.equal(manifest.config_schema[0].type, 'section');
 });
 
 test('add_charger action: device picker required, origin_cloud_url optional (empty = detach)', () => {

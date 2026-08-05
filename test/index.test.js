@@ -197,34 +197,6 @@ test('add_charger action: an empty URL detaches a previously configured charge p
   assert.deepEqual(stored, {});
 });
 
-test('reset_all action: rejects without the exact "RESET" confirmation', async (t) => {
-  const gladys = await setup(t, {
-    config: { chargers_json: JSON.stringify({ 'CP-1': 'wss://cloud-a/ocpp' }) },
-  });
-  const resetAll = gladys.handlers.actions['reset_all'];
-
-  await assert.rejects(() => resetAll({ confirm: '' }), /Type RESET/);
-  await assert.rejects(() => resetAll({ confirm: 'reset' }), /Type RESET/);
-  assert.equal(gladys.setConfigCalls.length, 0);
-  assert.equal(gladys.restartContainerCalls.length, 0);
-});
-
-test('reset_all action: clears every configured charge point and restarts the gateway sub-container', async (t) => {
-  const gladys = await setup(t, {
-    config: { chargers_json: JSON.stringify({ 'CP-1': 'wss://cloud-a/ocpp' }) },
-  });
-  const resetAll = gladys.handlers.actions['reset_all'];
-
-  const message = await resetAll({ confirm: 'RESET' });
-
-  const stored = JSON.parse(gladys.setConfigCalls.at(-1).chargers_json);
-  assert.deepEqual(stored, {});
-  assert.equal(gladys.restartContainerCalls.length, 1);
-  assert.equal(gladys.restartContainerCalls[0].name, GATEWAY_SUB_CONTAINER_NAME);
-  assert.match(message.en, /cleared/i);
-  assert.match(message.en, /not.*removed/i);
-});
-
 test('discovery refresh: republishes once a charge point shows up in the gateway, and only then', async (t) => {
   // The gateway can only be polled (it never pushes), and a charge point
   // connects on its own schedule - typically after the reconnection

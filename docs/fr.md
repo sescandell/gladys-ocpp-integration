@@ -47,41 +47,31 @@ cette intégration.
 
 ## Installation
 
-Une borne n'a besoin d'aucune configuration pour se connecter : pointez-la
-vers le relais quand vous voulez, elle apparaît aussitôt dans Découverte,
-déjà supervisée. L'association de son cloud d'origine vient ensuite, et
-nécessite que la borne ait d'abord été ajoutée à Gladys (étape 4
-ci-dessous) — c'est ainsi que la liste déroulante de l'action se remplit.
+Cinq étapes, une fois par borne. Rien n'est perdu au passage : la borne
+conserve sa propre connexion au cloud du fabricant, Gladys se place
+simplement au milieu et observe.
 
-1. Installez l'intégration — son relais démarre automatiquement, aucune
-   configuration n'est nécessaire pour l'instant.
-2. Ouvrez l'écran **Supervision** de l'intégration : le statut de connexion
-   affiche une URL OCPP prête à l'emploi, `ws://<adresse LAN de cet hôte
-Gladys>:<port>/` — le port est déjà rempli pour vous, il ne reste qu'à
-   remplacer le texte générique par l'adresse LAN réelle de cet hôte Gladys.
-   Cette URL est **la même pour toutes les bornes**.
-3. Dans l'application de la borne, faites pointer son URL de serveur OCPP
-   vers cette adresse. Elle se connecte tout de suite et apparaît dans
-   l'onglet **Découverte** — son statut réel (disponible, occupée, en
-   charge, etc.) est déjà supervisé même si elle n'est pas encore relayée
-   vers un cloud.
-4. **Ajoutez-la à Gladys** depuis l'onglet Découverte. Au-delà de créer
-   l'appareil, c'est ce qui fait entrer la borne dans la liste déroulante
-   utilisée à l'étape suivante.
-5. Quand vous êtes prêt à la router vers son vrai cloud : lancez l'action
-   **"Ajouter une borne"** (écran Configuration), **choisissez la borne dans
-   la liste**, et saisissez l'**URL du cloud d'origine** telle qu'affichée
-   par l'application de cette borne — y compris une éventuelle chaîne de
-   requête finale que certains fabricants utilisent (ex. se terminant par
-   `?sn=`). Une telle astuce ne concerne que la connexion sortante du relais
-   vers le cloud de ce fabricant — elle est invisible pour la borne
-   elle-même. La borne se reconnecte automatiquement en quelques secondes et
-   commence à être relayée au lieu d'être simplement supervisée localement.
-   Son URL de cloud d'origine configurée est alors affichée directement sur
-   sa fiche appareil — c'est le seul endroit pour la consulter, il n'existe
-   aucune liste des bornes configurées ailleurs.
-6. Répétez pour chaque autre borne à relayer — même URL, sa propre URL de
-   cloud d'origine, même d'un fabricant différent.
+1. **Notez l'URL du serveur OCPP** actuellement utilisée par votre borne,
+   dans l'application du fabricant. C'est votre seul chemin de retour vers
+   le cloud du fabricant — gardez-la précieusement.
+2. **Pointez la borne vers Gladys** : dans cette même application, remplacez
+   l'URL par celle affichée sur l'écran **Supervision** de l'intégration —
+   `ws://<adresse de votre Gladys>:<port>/`. Le port est déjà rempli pour
+   vous ; l'adresse est celle que vous utilisez pour joindre Gladys. La même
+   URL fonctionne pour **toutes** les bornes.
+3. **Ajoutez-la à Gladys** : elle se connecte immédiatement et apparaît dans
+   l'onglet **Découverte**, déjà supervisée. Ajoutez-la depuis là.
+4. **Rendez-lui son cloud** : sur l'écran Configuration, lancez l'action
+   **"Ajouter une borne"**, choisissez-la dans la liste, et collez l'URL de
+   l'étape 1 — exactement telle que l'application l'affichait, y compris une
+   éventuelle chaîne de requête finale que certains fabricants utilisent
+   (ex. se terminant par `?sn=`).
+5. **C'est tout.** La borne se reconnecte toute seule en quelques secondes et
+   continue de dialoguer avec le cloud du fabricant exactement comme avant,
+   en passant par Gladys — qui la suit désormais en direct.
+
+Répétez pour chaque autre borne : même URL Gladys, sa propre URL fabricant,
+même d'un fabricant différent.
 
 Pour corriger une erreur ou changer l'URL du cloud d'origine d'une borne,
 relancez l'action pour cette même borne avec l'URL corrigée (vérifiez
@@ -94,50 +84,17 @@ en cours jusque-là).
 Si vous **supprimez** de Gladys l'appareil d'une borne encore associée à un
 cloud d'origine, elle disparaît de la liste déroulante et l'action ne peut
 plus la modifier — le relais continue d'utiliser ce cloud. Ré-ajoutez
-l'appareil depuis Découverte pour reprendre la main, ou utilisez la
-réinitialisation ci-dessous.
+l'appareil depuis Découverte pour reprendre la main.
 
-## Repartir de zéro (debug)
+## Repartir de zéro
 
-Désinstaller puis réinstaller l'intégration est la façon propre de tout
-remettre à zéro : cela supprime chaque appareil qu'elle a créé, sa
-configuration stockée, ainsi que le conteneur et les données du relais —
-rien n'est laissé derrière.
+Désinstaller l'intégration supprime tout ce qu'elle a créé : ses appareils,
+sa configuration stockée, ainsi que le conteneur et les données du relais.
+Rien n'est laissé derrière, une réinstallation repart donc vraiment de zéro.
 
-Pour réinitialiser sans passer par une réinstallation complète (par exemple
-pendant des tests), lancez l'action **"Tout réinitialiser (debug)"** (écran
-Configuration, tapez `RESET` pour confirmer). Elle efface toutes les bornes
-configurées et redémarre le conteneur du relais, ce qui vide son état
-observé (connecteurs, transactions en cours, historique) — chaque borne,
-configurée ou non, doit alors se reconnecter et réapparaît dans Découverte
-comme lors de sa première connexion. Elle ne supprime **pas** les appareils
-déjà créés dans Gladys — retirez-les manuellement de la liste des appareils
-si vous n'en voulez plus.
-
-## Ce que vous voyez sur une borne
-
-Chaque connecteur remonte deux fonctionnalités d'état, en plus de ses
-mesures (puissance, courant, tension, énergie totale) :
-
-- **Statut** — ce que fait le connecteur lui-même : _Disponible_, _Occupé_,
-  _Réservé_, _Indisponible_, _En défaut_.
-- **État de charge** — ce que fait la session : _En charge_, _Véhicule
-  connecté_, _En pause (véhicule)_, _En pause (borne)_, _Inactif_.
-
-Les bornes OCPP 1.6 rapportent un statut unique, plus détaillé, qui est
-réparti entre ces deux fonctionnalités : `Preparing` devient « Occupé /
-Véhicule connecté », `Charging` devient « Occupé / En charge »,
-`SuspendedEV` et `SuspendedEVSE` deviennent « Occupé / En pause (véhicule) »
-et « Occupé / En pause (borne) », et `Finishing` devient « Occupé /
-Inactif ». Quand aucune session n'est en cours, l'état de charge affiche
-_Inactif_. Les deux fonctionnalités restent vides tant que la borne n'a pas
-rapporté son statut au moins une fois.
-
-Les valeurs se mettent à jour **au fil de l'eau**, en quelques secondes : le
-relais signale à l'intégration chaque changement qu'il observe, au lieu d'être
-interrogé à intervalles réguliers. Une borne qui se connecte pour la première
-fois apparaît elle aussi toute seule dans Découverte, sans attendre un
-rafraîchissement.
+Pour revenir directement au cloud de votre fabricant, remettez l'URL notée à
+l'étape 1 dans l'application de la borne — elle cesse de passer par Gladys à
+sa prochaine reconnexion.
 
 ## Connecteurs multiples
 

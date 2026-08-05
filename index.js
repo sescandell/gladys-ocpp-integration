@@ -46,12 +46,7 @@ import {
   observedConnectorIds,
 } from './src/devices/charger.js';
 import { createStatePublisher } from './src/stateSync.js';
-import {
-  ensureGatewayRunning,
-  syncChargerMap,
-  streamGatewayEvents,
-  GATEWAY_SUB_CONTAINER_NAME,
-} from './src/gatewayClient.js';
+import { ensureGatewayRunning, syncChargerMap, streamGatewayEvents } from './src/gatewayClient.js';
 
 /**
  * Wires every SDK handler onto `gladys` - deliberately does NOT call
@@ -250,35 +245,35 @@ export function registerHandlers(
    * see gatewayClient.js), and reflects it all in the connection status
    * (visible on the Supervision screen only - Gladys only renders it on
    * Configuration for integrations with an `oauth2` config field, which
-   * this manifest doesn't have): the ready-to-use OCPP URL to point charge
-   * points at (host part templated - we only know the assigned port, not
-   * this Gladys host's own LAN address) and how many charge points are
-   * configured. Which charge points exist at all - configured or merely
-   * auto-detected by the gateway's "local mode" - is NOT summarized here:
-   * it's shown directly in Discovery (see src/devices/charger.js), and each
-   * one's configured origin cloud URL on its own device card (`params`) -
-   * both a better fit than this single-line, ops-flavored status caption.
+   * this manifest doesn't have): just the OCPP URL to point charge points at.
+   *
+   * The host part stays templated because this container genuinely cannot
+   * know it: GLADYS_HOST_API_URL is the Docker bridge gateway (172.30.0.1,
+   * see core's externalIntegration.getHostApiUrl.js), never the LAN address,
+   * and the SDK exposes nothing else. Only the frontend knows it (it builds
+   * the Supervision port link from window.location.hostname).
+   *
+   * Nothing else belongs in this caption: what to do with the URL is the
+   * config screen's "how to" section, and each charge point's own state is on
+   * its device card.
    */
   async function reconcileGateway() {
     try {
       const { hostPort } = await ensureGatewayRunning(gladys);
       await withGatewayRetries(() => syncChargerMap(config.chargers, gatewayBaseUrl));
 
-      const configuredCount = Object.keys(config.chargers).length;
-      const en = [
+      await gladys.setConnectionStatus(
+        true,
         hostPort
-          ? `OCPP URL: ws://<this Gladys host's LAN address>:${hostPort}/ - enter this in each charge point's vendor app.`
-          : 'Relay running, host port not yet assigned.',
-        `${configuredCount} charge point(s) configured.`,
-      ];
-      const fr = [
-        hostPort
-          ? `URL OCPP : ws://<adresse LAN de cet hôte Gladys>:${hostPort}/ - à saisir dans l'application de chaque borne.`
-          : 'Relais actif, port hôte pas encore assigné.',
-        `${configuredCount} borne(s) configurée(s).`,
-      ];
-
-      await gladys.setConnectionStatus(true, { en: en.join(' '), fr: fr.join(' ') });
+          ? {
+              en: `OCPP URL: ws://<your Gladys address>:${hostPort}/`,
+              fr: `URL OCPP : ws://<adresse de votre Gladys>:${hostPort}/`,
+            }
+          : {
+              en: 'Relay running, host port not yet assigned.',
+              fr: 'Relais actif, port hôte pas encore assigné.',
+            },
+      );
     } catch (err) {
       logger.error('Unable to start/verify the gateway sub-container', err);
       await gladys
@@ -306,9 +301,8 @@ export function registerHandlers(
     await blueprint.onPoll(gladys, config, device, fetchState);
   });
 
-  // --- Configuration updated (the manifest declares no config_schema at ------
-  // --- all - there is no generated form and nothing for the user to fill -----
-  // --- in; the set of charge points is managed entirely through the ----------
+  // --- Configuration updated (the config form holds nothing but a "how to" ---
+  // --- section; the set of charge points is managed entirely through the -----
   // --- add_charger action below, whose own setConfig lands here) -------------
   gladys.onConfigUpdated(async (newConfig) => {
     logger.info('onConfigUpdated -> new configuration received');
@@ -375,37 +369,6 @@ export function registerHandlers(
           en: `Charge point "${identity}" configured. If it's already connected, it will automatically reconnect within a few seconds and start relaying to its origin cloud - the configured URL is shown on its device card.`,
           fr: `Borne "${identity}" configurée. Si elle est déjà connectée, elle se reconnectera automatiquement dans les secondes qui suivent et commencera à être relayée vers son cloud d'origine - l'URL configurée est affichée sur sa fiche appareil.`,
         };
-  });
-
-  // --- Manifest action: debug reset -------------------------------------------
-  // Clears every configured charge point and restarts the "gateway" sub-
-  // container, which wipes ALL of its in-memory state at once (StateStore,
-  // ChargerRegistry, localClients - see gateway/src/gateway.ts) - the only
-  // way to drop a live RELAY-mode connection too, since (unlike local-mode
-  // ones) those aren't tracked in any identity-keyed map the state API could
-  // force-close individually. Every connected charge point, configured or
-  // not, has to reconnect afterwards - it then shows up again exactly as it
-  // would on first contact (local mode, or relay mode if still configured
-  // once this action's own config wipe below has been undone by re-running
-  // "Add a charge point"). This can NOT remove devices already created in
-  // Gladys: the SDK exposes no device-deletion call (see `onDeviceDeleted`,
-  // the other direction) - remove those manually from the device list.
-  gladys.onAction('reset_all', async (fields) => {
-    if (String(fields.confirm ?? '').trim() !== 'RESET') {
-      throw new Error('Type RESET (uppercase) in the confirmation field to proceed.');
-    }
-
-    await gladys.setConfig(serializeChargersStore({}));
-    config = { ...normalizeConfig(await gladys.getConfig()), chargers: {} };
-
-    await gladys.restartContainer(GATEWAY_SUB_CONTAINER_NAME);
-    await reconcileGateway();
-    await publishDevices();
-
-    return {
-      en: 'Gateway state cleared and every charge point unconfigured. Connected charge points will reconnect automatically within a few seconds and reappear in Discovery. Devices already added to Gladys were NOT removed - delete those manually if you no longer want them.',
-      fr: "État du relais réinitialisé et toutes les bornes déconfigurées. Les bornes connectées se reconnecteront automatiquement dans les secondes qui suivent et réapparaîtront dans Découverte. Les appareils déjà ajoutés à Gladys n'ont PAS été supprimés - retirez-les manuellement si vous n'en voulez plus.",
-    };
   });
 
   // --- Connection lifecycle ----------------------------------------------------

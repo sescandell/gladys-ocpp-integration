@@ -3,15 +3,27 @@
   "type": "device",
   "name": "Charger Station",
   "description": {
-    "en": "Read-only supervision of OCPP 1.6 charge points, each relayed to its own origin cloud.",
-    "fr": "Supervision en lecture seule de bornes OCPP 1.6, chacune relayee vers son propre cloud d'origine."
+    "en": "Follow your charging stations in Gladys, live, through the OCPP protocol.",
+    "fr": "Suivez vos bornes de recharge dans Gladys, en direct, grâce au protocole OCPP."
   },
   "version": "0.7.0",
   "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.7.0",
   "gladys_version": ">=4.84.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
-  "transports": [
-    "local"
+  "transports": ["local"],
+  "config_schema": [
+    {
+      "key": "how_to",
+      "type": "section",
+      "label": {
+        "en": "Connecting a charge point",
+        "fr": "Raccorder une borne"
+      },
+      "description": {
+        "en": "1. In your charge point's app, write down the OCPP server URL it currently uses - this is the only way back to your vendor's cloud, keep it safe. 2. Replace it with the OCPP URL shown on the Supervision screen: your Gladys address, on the port listed there. 3. The charge point connects and appears in the Discovery tab - add it to Gladys. 4. Come back here, run \"Add a charge point\" below, pick it from the list and paste the URL from step 1. 5. Done: the charge point keeps talking to its vendor's cloud exactly as before, through Gladys, which now follows it live.",
+        "fr": "1. Dans l'application de votre borne, notez l'URL du serveur OCPP actuellement utilisée - c'est le seul chemin de retour vers le cloud du fabricant, gardez-la précieusement. 2. Remplacez-la par l'URL OCPP affichée sur l'écran Supervision : l'adresse de votre Gladys, sur le port qui y est indiqué. 3. La borne se connecte et apparaît dans l'onglet Découverte - ajoutez-la à Gladys. 4. Revenez ici, lancez l'action \"Ajouter une borne\" ci-dessous, choisissez-la dans la liste et collez l'URL de l'étape 1. 5. C'est tout : la borne continue de dialoguer avec le cloud du fabricant exactement comme avant, en passant par Gladys, qui la suit désormais en direct."
+      }
+    }
   ],
   "actions": [
     {
@@ -21,8 +33,8 @@
         "fr": "Ajouter une borne"
       },
       "description": {
-        "en": "Attach an origin cloud URL to a charge point (take the URL from the vendor app, exactly as shown there). The list only offers charge points already added to Gladys: if yours is missing, add it from the Discovery tab first - it appears there on its own as soon as it connects to the relay. If it is already connected, it reconnects automatically within a few seconds and switches into full relay mode. Running this again for the same charge point updates its URL; leave the URL empty to detach it from its cloud and put it back into local-only supervision.",
-        "fr": "Associez une URL de cloud d'origine a une borne (reprenez l'URL dans l'application du fabricant, exactement telle qu'affichee). La liste ne propose que les bornes deja ajoutees a Gladys : si la votre n'y est pas, ajoutez-la d'abord depuis l'onglet Decouverte - elle y apparait toute seule des qu'elle se connecte au relais. Si elle est deja connectee, elle se reconnecte automatiquement en quelques secondes et bascule en mode relais complet. Relancer cette action pour la meme borne met a jour son URL ; laissez l'URL vide pour la detacher de son cloud et la remettre en supervision locale uniquement."
+        "en": "Step 4 above. Paste the URL exactly as the vendor app showed it. The list only offers charge points already added to Gladys - if yours is missing, add it from the Discovery tab first. Run it again anytime to correct the URL; leave the URL empty to stop relaying that charge point to its cloud.",
+        "fr": "L'étape 4 ci-dessus. Collez l'URL exactement telle que l'application du fabricant l'affichait. La liste ne propose que les bornes déjà ajoutées à Gladys - si la vôtre n'y est pas, ajoutez-la d'abord depuis l'onglet Découverte. Relancez l'action à tout moment pour corriger l'URL ; laissez l'URL vide pour cesser de relayer cette borne vers son cloud."
       },
       "timeout_seconds": 15,
       "fields": [
@@ -46,29 +58,6 @@
           "required": false
         }
       ]
-    },
-    {
-      "key": "reset_all",
-      "label": {
-        "en": "Reset everything (debug)",
-        "fr": "Tout réinitialiser (debug)"
-      },
-      "description": {
-        "en": "Debug tool: clears every configured charge point (identity + origin cloud URL) and restarts the gateway sub-container, wiping all of its observed state (connectors, live transactions, history) and dropping every live OCPP connection - configured charge points included, they will need to reconnect. This does NOT delete devices already added to Gladys: remove those manually from the device list if you no longer want them. Type RESET in the field below to confirm.",
-        "fr": "Outil de debug : efface toutes les bornes configurées (identity + URL de cloud d'origine) et redémarre le sous-conteneur du relais, ce qui vide tout son état observé (connecteurs, transactions en cours, historique) et coupe toutes les connexions OCPP en cours - y compris les bornes configurées, qui devront se reconnecter. Cela ne supprime PAS les appareils déjà ajoutés à Gladys : retirez-les manuellement de la liste des appareils si vous n'en voulez plus. Tapez RESET dans le champ ci-dessous pour confirmer."
-      },
-      "timeout_seconds": 30,
-      "fields": [
-        {
-          "key": "confirm",
-          "type": "string",
-          "label": {
-            "en": "Type RESET to confirm",
-            "fr": "Tapez RESET pour confirmer"
-          },
-          "required": true
-        }
-      ]
     }
   ],
   "containers": [
@@ -80,8 +69,8 @@
         {
           "container_port": 9321,
           "label": {
-            "en": "OCPP (charge points connect here)",
-            "fr": "OCPP (les bornes se connectent ici)"
+            "en": "OCPP",
+            "fr": "OCPP"
           }
         }
       ],

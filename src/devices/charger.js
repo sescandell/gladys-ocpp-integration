@@ -274,7 +274,10 @@ function buildChargerDevice(gladys, identity, originCloudUrl, chargeState) {
   const observed = observedConnectorIds(chargeState);
   const connectorIds = observed.length > 0 ? observed : [DEFAULT_CONNECTOR_ID];
   return {
-    name: `Charger Station ${identity}`,
+    // The OCPP identity alone: it is what the user reads on the hardware, and
+    // Gladys device names carry no translation, so a hardcoded English prefix
+    // would be wrong for half the users.
+    name: identity,
     external_id: ids.device,
     // t_device.should_poll defaults to FALSE and nothing in the external
     // integration path derives it from poll_frequency (device.add.js only

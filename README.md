@@ -45,7 +45,7 @@ Charge point A ─┐                     Charge point B ─┐
 
 ```
 .
-├─ index.js                          # SDK bootstrap, gateway lifecycle, add_charger/reset_all actions
+├─ index.js                          # SDK bootstrap, gateway lifecycle, event stream, add_charger action
 ├─ src/
 │  ├─ config.js                      # config defaults + normalization (folds in `chargers`)
 │  ├─ chargers.js                    # free-config charger store: parse/serialize/upsert/remove
@@ -71,7 +71,7 @@ Charge point A ─┐                     Charge point B ─┐
 │  └─ Dockerfile                     #   sub-container image
 ├─ docs/
 │  ├─ en.md / fr.md                  # user documentation (re-hosted by Gladys)
-├─ gladys-assistant-integration.json # manifest (add_charger/reset_all actions + "gateway" sub-container, no config_schema)
+├─ gladys-assistant-integration.json # manifest (walkthrough section + add_charger action + "gateway" sub-container)
 ├─ Dockerfile                        # main container image, Node 24 Alpine, read-only rootfs
 ├─ .github/workflows/                # CI: builds + publishes BOTH images (main + gateway)
 └─ cover.png                         # catalog cover, 800×534 px, ≤150 KB
@@ -101,10 +101,10 @@ resolves to full relay mode. Removing a charge point's URL takes effect on
 its next reconnection, not retroactively (an already-relaying session isn't
 interrupted).
 
-The manifest declares **no `config_schema` at all**: there is nothing for
-the user to fill in, so the Configuration screen shows only the actions
-(plus the standard link to `docs/`, which Gladys renders whether or not a
-schema exists).
+The `config_schema` holds a single presentational `section`: the numbered
+walkthrough (note the current OCPP URL, point the charge point at Gladys, add
+it from Discovery, run the action with the noted URL). Nothing there stores a
+value - the set of charge points cannot be a flat, fixed list of fields.
 
 The action picks the charge point through a `select` with `source:
 "devices"` - Gladys core fills that dropdown itself, so the user never
@@ -119,20 +119,13 @@ retypes an exact OCPP identity. Two consequences worth knowing:
   `t_device`, while merely-discovered devices live in an in-memory map it
   never queries. So a charge point must be created from Discovery before it
   can be given an origin cloud URL - and deleting its device makes its
-  `chargers_json` entry unreachable from the action (`reset_all` is the way
-  out).
+  `chargers_json` entry unreachable from the action (re-add it from Discovery
+  to regain control).
 
-A separate `reset_all` action (confirmation-gated, "type RESET") clears
-`chargers_json` entirely and calls `gladys.restartContainer('gateway')` -
-the only way to drop a live RELAY-mode connection too (unlike local-mode
-ones, those aren't tracked in any identity-keyed map `stateApi.ts` could
-force-close individually), giving every charge point a clean local-mode
-re-detection on reconnect. It cannot delete devices already created in
-Gladys - the SDK has no such call - uninstalling/reinstalling the
-integration is the actual full reset (it removes devices, config, and the
-sub-container's own data, verified in Gladys core's
-`externalIntegration.uninstall.js`); `reset_all` exists for iterating
-without that round-trip.
+Uninstalling the integration is the full reset: it removes the devices, the
+config, the containers and the sub-container's own data (verified in Gladys
+core's `externalIntegration.uninstall.js`) - nothing survives, so no
+in-integration reset action is needed.
 
 `src/devices/charger.js`'s `buildDevices()` offers ONE Gladys device per
 identity in the union of `config.chargers` (configured) and the gateway's
