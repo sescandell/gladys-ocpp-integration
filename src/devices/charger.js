@@ -119,6 +119,18 @@ const AGGREGATE_CONNECTOR_ID = 0;
 // hardware, only) connector.
 const DEFAULT_CONNECTOR_ID = 1;
 
+// OCPP 1.6 has no EVSE concept - only OCPP 2.x's StatusNotification/
+// TransactionEvent carry an evseId alongside connectorId (one charge point
+// can expose several EVSEs, each with its own connector(s)). This relay is
+// 1.6-only today (see README's "Protocol scope"), but reserving this
+// segment in the feature external_id NOW, before any real device exists in
+// production, avoids a breaking external_id change (and the resulting loss
+// of feature history) if 2.x support is ever added later - `1` matches
+// OCPP 2.x's own convention for a charge point with a single EVSE (evseId 0
+// is reserved for the aggregate charge point, same pattern as
+// AGGREGATE_CONNECTOR_ID above).
+const DEFAULT_EVSE_ID = 1;
+
 // A discovered device's poll_frequency is NOT a free number: Gladys core
 // rejects (and fails the ENTIRE publishDiscoveredDevices call, for every
 // device in the batch) any value other than a few exact milliseconds,
@@ -145,7 +157,7 @@ export function mapConnectorToStates(ids, connectorId, connector) {
   const push = (featureKey, value) => {
     if (value === null || value === undefined || Number.isNaN(value)) return;
     states.push({
-      device_feature_external_id: ids.feature(`${featureKey}:${connectorId}`),
+      device_feature_external_id: ids.feature(`${featureKey}:${DEFAULT_EVSE_ID}:${connectorId}`),
       state: value,
     });
   };
@@ -177,7 +189,7 @@ function buildConnectorFeatures(ids, connectorId) {
   return [
     {
       name: label('Status'),
-      external_id: ids.feature(`${FEATURE.CONNECTOR_STATUS}:${connectorId}`),
+      external_id: ids.feature(`${FEATURE.CONNECTOR_STATUS}:${DEFAULT_EVSE_ID}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.CHARGING_STATION,
       type: DEVICE_FEATURE_TYPES.CHARGING_STATION.CONNECTOR_STATUS,
       // min/max are NOT NULL in t_device_feature and only enforced by the
@@ -191,7 +203,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Charging state'),
-      external_id: ids.feature(`${FEATURE.CHARGING_STATE}:${connectorId}`),
+      external_id: ids.feature(`${FEATURE.CHARGING_STATE}:${DEFAULT_EVSE_ID}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.CHARGING_STATION,
       type: DEVICE_FEATURE_TYPES.CHARGING_STATION.CHARGING_STATE,
       min: 0,
@@ -206,7 +218,7 @@ function buildConnectorFeatures(ids, connectorId) {
     // the totalizer be attached under the house meter (energy_parent_id).
     {
       name: label('Charging power'),
-      external_id: ids.feature(`${FEATURE.POWER}:${connectorId}`),
+      external_id: ids.feature(`${FEATURE.POWER}:${DEFAULT_EVSE_ID}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.POWER,
       unit: DEVICE_FEATURE_UNITS.KILOWATT,
@@ -218,7 +230,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Charging current'),
-      external_id: ids.feature(`${FEATURE.CURRENT}:${connectorId}`),
+      external_id: ids.feature(`${FEATURE.CURRENT}:${DEFAULT_EVSE_ID}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.CURRENT,
       unit: DEVICE_FEATURE_UNITS.AMPERE,
@@ -230,7 +242,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Voltage'),
-      external_id: ids.feature(`${FEATURE.VOLTAGE}:${connectorId}`),
+      external_id: ids.feature(`${FEATURE.VOLTAGE}:${DEFAULT_EVSE_ID}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.VOLTAGE,
       unit: DEVICE_FEATURE_UNITS.VOLT,
@@ -242,7 +254,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Total energy'),
-      external_id: ids.feature(`${FEATURE.ENERGY}:${connectorId}`),
+      external_id: ids.feature(`${FEATURE.ENERGY}:${DEFAULT_EVSE_ID}:${connectorId}`),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.ENERGY,
       unit: DEVICE_FEATURE_UNITS.KILOWATT_HOUR,

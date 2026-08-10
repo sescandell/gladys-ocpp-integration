@@ -1,15 +1,41 @@
 # Gladys OCPP integration
 
 External integration for [Gladys Assistant](https://gladysassistant.com):
-read-only supervision of any number of OCPP 1.6 charge points, each
-relayed through an embedded, companion OCPP relay to its own vendor cloud —
-even different vendors at once. Built with the JavaScript SDK
-[`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),
-from the official
-[`integration-template-js`](https://github.com/GladysAssistant/integration-template-js).
+read-only supervision of any number of OCPP charge points, each relayed
+through an embedded, companion OCPP relay to its own vendor cloud — even
+different vendors at once.
 
 User-facing documentation (setup, security notes, limitations):
 [`docs/en.md`](./docs/en.md) / [`docs/fr.md`](./docs/fr.md).
+
+## Protocol scope
+
+**OCPP 1.6J only, for now.** Being a relay doesn't make it protocol-transparent:
+
+- The WebSocket subprotocol the gateway's `RPCServer` negotiates is hardcoded
+  to `ocpp1.6` (`DEFAULT_PROTOCOLS` in `gateway/src/gateway.ts`). A charge
+  point that only offers `ocpp2.0.1`/`ocpp2.1` at the WebSocket handshake has
+  no subprotocol in common with the server and never connects at all — this
+  is rejected before any of this integration's own logic runs.
+- Even past the handshake, the state-observation logic (`observe.ts`,
+  `meterValues.ts`, `ocpp16.ts`, and `src/devices/charger.js`'s
+  `OCPP16_STATUS_MAP`) is written against OCPP 1.6's message names and
+  shapes (`StatusNotification`, `MeterValues`, `ChargePointStatus`, ...).
+  OCPP 2.x renames and restructures these (e.g. `TransactionEvent` instead
+  of `Start`/`StopTransaction`), so it wouldn't be understood even if it
+  arrived.
+- The underlying `ocpp-rpc` library does ship JSON-schema validators for
+  `ocpp2.0.1`/`ocpp2.1` too — but only for its own optional `strictMode`
+  message validation, which this gateway deliberately disables in favor of a
+  byte-faithful passthrough of whatever OCPP 1.6 traffic it sees (see
+  `gateway.ts`'s "No strictMode" comment). Their presence in the dependency
+  tree isn't OCPP 2.x support.
+
+Gladys core's `charging-station` device feature category (used below) was
+itself designed to be protocol-agnostic — its enum values are aligned with
+OCPP 2.x's own status model precisely so a future OCPP 2.x integration could
+reuse it. That forward-compatibility is at the Gladys **device model**
+level, not something this **relay** currently provides.
 
 ## Why two containers
 
@@ -153,13 +179,23 @@ already-created device surfaces as an "Update" button in Gladys - the user
 stays in control of structural changes.
 
 Each connector reports 6 features: two enums from Gladys's
-**`charging-station`** category (`connector-status` and `charging-state`,
-core PR #2756) plus four **`energy-sensor`** measurements (power, current,
-voltage, total energy). The measurements are not
-`electrical-vehicle-charge`, a vehicle-side category: only
-`[energy-sensor, switch, teleinformation]` features are offered by Gladys's
-energy monitoring page, so this is what lets the totalizer be attached under
-the house meter as a sub-meter (`energy_parent_id`).
+**`charging-station`** category (`connector-status` and `charging-state`)
+plus four **`energy-sensor`** measurements (power, current, voltage, total
+energy). The measurements are not `electrical-vehicle-charge`, a
+vehicle-side category: only `[energy-sensor, switch, teleinformation]`
+features are offered by Gladys's energy monitoring page, so this is what
+lets the totalizer be attached under the house meter as a sub-meter
+(`energy_parent_id`).
+
+Each feature's `external_id` carries a `<feature key>:<evse id>:<connector
+id>` suffix (e.g. `connector-status:1:1`), not just `<feature key>:<connector
+id>`: the `1` reserves the OCPP 2.x EVSE dimension (see "Protocol scope"
+above) even though this relay is 1.6-only and that segment never varies
+today. External identifiers are what Gladys ties feature history to — a
+scheme change after real devices exist loses it — so this integration
+picks the shape it would need **before** it ships to real users, rather
+than risk changing it once it can't be changed for free anymore
+(`DEFAULT_EVSE_ID` in `src/devices/charger.js`).
 
 OCPP 1.6 sends a single, more granular `ChargePointStatus`, so
 `src/devices/charger.js`'s `OCPP16_STATUS_MAP` splits it across the two
@@ -311,6 +347,9 @@ exact tagging scheme.
 
 ## Notes
 
+- Built on [`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js)
+  (`^0.11.0`), from the official
+  [`integration-template-js`](https://github.com/GladysAssistant/integration-template-js).
 - Requires **Node.js ≥ 20** for the main container; the `gateway/`
   sub-project targets Node 24 (matching its Docker image) and TypeScript run
   natively (no build step).

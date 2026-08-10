@@ -39,16 +39,16 @@ test('mapConnectorToStates: OCPP 1.6 status split across connector status + char
 
   for (const [status, [connectorStatus, chargingState]] of Object.entries(expected)) {
     const states = mapConnectorToStates(ids, 1, { status });
-    assert.equal(stateOf(states, 'connector-status:1'), connectorStatus, `${status} connector`);
-    assert.equal(stateOf(states, 'charging-state:1'), chargingState, `${status} charging state`);
+    assert.equal(stateOf(states, 'connector-status:1:1'), connectorStatus, `${status} connector`);
+    assert.equal(stateOf(states, 'charging-state:1:1'), chargingState, `${status} charging state`);
   }
 });
 
 test('mapConnectorToStates: states are scoped to the connector id', () => {
   const states = mapConnectorToStates(ids, 2, { status: 'Charging' });
-  assert.equal(stateOf(states, 'connector-status:2'), 1);
-  assert.equal(stateOf(states, 'charging-state:2'), 0);
-  assert.equal(stateOf(states, 'connector-status:1'), undefined);
+  assert.equal(stateOf(states, 'connector-status:1:2'), 1);
+  assert.equal(stateOf(states, 'charging-state:1:2'), 0);
+  assert.equal(stateOf(states, 'connector-status:1:1'), undefined);
 });
 
 test('mapConnectorToStates: an unknown status publishes neither enum feature', () => {
@@ -56,8 +56,8 @@ test('mapConnectorToStates: an unknown status publishes neither enum feature', (
   // StatusNotification.
   for (const status of ['Unknown', 'SomeVendorStatus', undefined]) {
     const states = mapConnectorToStates(ids, 1, { status });
-    assert.equal(stateOf(states, 'connector-status:1'), undefined, `${status}`);
-    assert.equal(stateOf(states, 'charging-state:1'), undefined, `${status}`);
+    assert.equal(stateOf(states, 'connector-status:1:1'), undefined, `${status}`);
+    assert.equal(stateOf(states, 'charging-state:1:1'), undefined, `${status}`);
   }
 });
 
@@ -70,19 +70,19 @@ test('mapConnectorToStates: numeric measurements converted to the right unit', (
     energyActiveImportRegisterWh: 1500,
   });
   assert.equal(
-    states.find((s) => s.device_feature_external_id === ids.feature('power:1')).state,
+    states.find((s) => s.device_feature_external_id === ids.feature('power:1:1')).state,
     7.2,
   );
   assert.equal(
-    states.find((s) => s.device_feature_external_id === ids.feature('current:1')).state,
+    states.find((s) => s.device_feature_external_id === ids.feature('current:1:1')).state,
     16,
   );
   assert.equal(
-    states.find((s) => s.device_feature_external_id === ids.feature('voltage:1')).state,
+    states.find((s) => s.device_feature_external_id === ids.feature('voltage:1:1')).state,
     230,
   );
   assert.equal(
-    states.find((s) => s.device_feature_external_id === ids.feature('energy:1')).state,
+    states.find((s) => s.device_feature_external_id === ids.feature('energy:1:1')).state,
     1.5,
   );
 });
@@ -90,7 +90,7 @@ test('mapConnectorToStates: numeric measurements converted to the right unit', (
 test('mapConnectorToStates: missing numeric measurements are not published', () => {
   const states = mapConnectorToStates(ids, 1, { status: 'Available' });
   assert.equal(
-    states.some((s) => s.device_feature_external_id === ids.feature('power:1')),
+    states.some((s) => s.device_feature_external_id === ids.feature('power:1:1')),
     false,
   );
 });
@@ -188,7 +188,7 @@ test("buildDevices: connector state uses Gladys's CHARGING_STATION category, bou
   const gladys = createFakeGladys();
   const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
   const byExternalId = (key) =>
-    devices[0].features.find((f) => f.external_id.endsWith(`:${key}:1`));
+    devices[0].features.find((f) => f.external_id.endsWith(`:${key}:1:1`));
 
   const connectorStatus = byExternalId('connector-status');
   assert.equal(connectorStatus.category, 'charging-station');
@@ -215,7 +215,7 @@ test("buildDevices: the measurements are ENERGY_SENSOR, so they reach Gladys's e
   const gladys = createFakeGladys();
   const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
   const byExternalId = (key) =>
-    devices[0].features.find((f) => f.external_id.endsWith(`:${key}:1`));
+    devices[0].features.find((f) => f.external_id.endsWith(`:${key}:1:1`));
 
   const expected = {
     power: { type: 'power', unit: 'kilowatt' },
@@ -383,7 +383,7 @@ test('onPoll: publishes states for the matching charge point, all its connectors
 
   await charger.onPoll(gladys, config, device, fetchState);
   assert.ok(
-    gladys.published.some((p) => p.featureExternalId.endsWith(':voltage:1') && p.state === 230),
+    gladys.published.some((p) => p.featureExternalId.endsWith(':voltage:1:1') && p.state === 230),
   );
 });
 
@@ -421,7 +421,7 @@ test('onPoll: resolves and publishes for a device whose identity was never confi
   // normalizeConfig() with no chargers_json - nothing configured.
   await charger.onPoll(gladys, normalizeConfig(), device, fetchState);
   assert.ok(
-    gladys.published.some((p) => p.featureExternalId.endsWith(':voltage:1') && p.state === 42),
+    gladys.published.some((p) => p.featureExternalId.endsWith(':voltage:1:1') && p.state === 42),
   );
 });
 

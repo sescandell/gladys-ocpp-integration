@@ -331,10 +331,10 @@ test('gateway change: publishes the charge point states without calling back to 
   await new Promise((resolve) => setImmediate(resolve));
 
   const byFeature = new Map(gladys.published.map((p) => [p.featureExternalId, p.state]));
-  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':connector-status:1'), 1);
-  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':charging-state:1'), 0);
-  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':voltage:1'), 230);
-  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':power:1'), 7.2);
+  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':connector-status:1:1'), 1);
+  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':charging-state:1:1'), 0);
+  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':voltage:1:1'), 230);
+  assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':power:1:1'), 7.2);
 });
 
 test('gateway change: a new charge point refreshes Discovery, a known one does not', async (t) => {
@@ -423,7 +423,7 @@ test('event stream: states reach Gladys from a live SSE connection', async (t) =
     charger: { identity: 'CP-1', connectors: { 1: { status: 'Charging', voltageV: 400 } } },
   });
 
-  const featureId = deviceExternalId(gladys, 'CP-1') + ':voltage:1';
+  const featureId = deviceExternalId(gladys, 'CP-1') + ':voltage:1:1';
   while (!gladys.published.some((p) => p.featureExternalId === featureId)) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
