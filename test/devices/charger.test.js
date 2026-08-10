@@ -31,7 +31,7 @@ test('mapConnectorToStates: OCPP 1.6 status split across connector status + char
     Charging: [1, 0], // OCCUPIED     / CHARGING
     SuspendedEVSE: [1, 3], // OCCUPIED / PAUSED_BY_CHARGER
     SuspendedEV: [1, 2], // OCCUPIED   / PAUSED_BY_VEHICLE
-    Finishing: [1, 4], // OCCUPIED    / IDLE
+    Finishing: [1, 1], // OCCUPIED    / EV_CONNECTED
     Reserved: [2, 4], // RESERVED     / IDLE
     Unavailable: [3, 4], // UNAVAILABLE / IDLE
     Faulted: [4, 4], // FAULTED      / IDLE

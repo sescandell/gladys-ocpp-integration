@@ -102,11 +102,12 @@ current, voltage, total energy):
   connected_, _Paused (vehicle)_, _Paused (charger)_, _Idle_.
 
 OCPP 1.6 charge points report a single, more detailed status, which is split
-across those two: `Preparing` shows as "Occupied / Vehicle connected",
-`Charging` as "Occupied / Charging", `SuspendedEV` and `SuspendedEVSE` as
-"Occupied / Paused (vehicle)" and "Occupied / Paused (charger)", and
-`Finishing` as "Occupied / Idle". When no session is in progress, the
-charging state reads _Idle_. Both features stay empty until the charge point
+across those two: `Preparing` and `Finishing` both show as "Occupied /
+Vehicle connected" (a vehicle is physically connected in both cases),
+`Charging` as "Occupied / Charging", and `SuspendedEV`/`SuspendedEVSE` as
+"Occupied / Paused (vehicle)"/"Occupied / Paused (charger)". When no session
+is in progress, the charging state reads _Idle_. Both features stay empty
+until the charge point
 has reported its status at least once.
 
 Values update **as they happen**, within a few seconds: the relay tells the

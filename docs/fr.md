@@ -109,13 +109,13 @@ mesures (puissance, courant, tension, énergie totale) :
   connecté_, _En pause (véhicule)_, _En pause (borne)_, _Inactif_.
 
 Les bornes OCPP 1.6 rapportent un statut unique, plus détaillé, qui est
-réparti entre ces deux fonctionnalités : `Preparing` devient « Occupé /
-Véhicule connecté », `Charging` devient « Occupé / En charge »,
-`SuspendedEV` et `SuspendedEVSE` deviennent « Occupé / En pause (véhicule) »
-et « Occupé / En pause (borne) », et `Finishing` devient « Occupé /
-Inactif ». Quand aucune session n'est en cours, l'état de charge affiche
-_Inactif_. Les deux fonctionnalités restent vides tant que la borne n'a pas
-rapporté son statut au moins une fois.
+réparti entre ces deux fonctionnalités : `Preparing` et `Finishing`
+deviennent tous les deux « Occupé / Véhicule connecté » (un véhicule est
+physiquement branché dans les deux cas), `Charging` devient « Occupé / En
+charge », et `SuspendedEV`/`SuspendedEVSE` deviennent « Occupé / En pause
+(véhicule) »/« Occupé / En pause (borne) ». Quand aucune session n'est en
+cours, l'état de charge affiche _Inactif_. Les deux fonctionnalités restent
+vides tant que la borne n'a pas rapporté son statut au moins une fois.
 
 Les valeurs se mettent à jour **au fil de l'eau**, en quelques secondes : le
 relais signale à l'intégration chaque changement qu'il observe, au lieu d'être

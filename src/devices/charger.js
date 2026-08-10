@@ -83,12 +83,21 @@ const CHARGING_STATE = {
   DISCHARGING: 5,
 };
 
-// Splits OCPP 1.6's single ChargePointStatus into Gladys's two features,
-// following the mapping documented in core's constants.js.
+// Splits OCPP 1.6's single ChargePointStatus into Gladys's two features.
 // `chargingState: null` = no session in progress -> published as IDLE, since
 // a Gladys feature holds its last value forever (a frozen "Charging" on an
 // unplugged connector would be wrong). An unlisted status (including the
 // gateway's "Unknown" placeholder) publishes neither feature.
+//
+// Finishing -> EV_CONNECTED, not IDLE: this deviates from the mapping
+// suggested in core's constants.js. OCPP 1.6's Finishing means "transaction
+// has stopped, but connector is not yet available (e.g. cable still plugged
+// in)" - the vehicle IS still connected. Gladys's IDLE (mirroring OCPP
+// 2.x's ChargingStateEnumType, which this category's values align with)
+// means the opposite: "there is no connection between EV and EVSE" (see
+// ocpp-go's ChargingStateIdle doc comment, the same source core's mapping
+// cites). EV_CONNECTED ("there is a connection between EV and EVSE") is the
+// accurate value for a charge point in this state.
 const OCPP16_STATUS_MAP = {
   Available: { connectorStatus: CONNECTOR_STATUS.AVAILABLE, chargingState: null },
   Preparing: {
@@ -104,7 +113,10 @@ const OCPP16_STATUS_MAP = {
     connectorStatus: CONNECTOR_STATUS.OCCUPIED,
     chargingState: CHARGING_STATE.PAUSED_BY_VEHICLE,
   },
-  Finishing: { connectorStatus: CONNECTOR_STATUS.OCCUPIED, chargingState: CHARGING_STATE.IDLE },
+  Finishing: {
+    connectorStatus: CONNECTOR_STATUS.OCCUPIED,
+    chargingState: CHARGING_STATE.EV_CONNECTED,
+  },
   Reserved: { connectorStatus: CONNECTOR_STATUS.RESERVED, chargingState: null },
   Unavailable: { connectorStatus: CONNECTOR_STATUS.UNAVAILABLE, chargingState: null },
   Faulted: { connectorStatus: CONNECTOR_STATUS.FAULTED, chargingState: null },
