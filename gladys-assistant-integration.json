@@ -6,8 +6,8 @@
     "en": "Follow your charging stations in Gladys, live, through the OCPP protocol.",
     "fr": "Suivez vos bornes de recharge dans Gladys, en direct, grâce au protocole OCPP."
   },
-  "version": "0.10.1",
-  "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.10.1",
+  "version": "1.0.0",
+  "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:1.0.0",
   "gladys_version": ">=4.85.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
   "transports": [
@@ -65,7 +65,7 @@
   "containers": [
     {
       "name": "gateway",
-      "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration-gateway:0.10.1",
+      "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration-gateway:1.0.0",
       "start": "auto",
       "ports": [
         {
