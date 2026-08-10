@@ -46,7 +46,7 @@ import {
   observedConnectorIds,
 } from './src/devices/charger.js';
 import { createStatePublisher } from './src/stateSync.js';
-import { ensureGatewayRunning, syncChargerMap, streamGatewayEvents } from './src/gatewayClient.js';
+import { syncChargerMap, streamGatewayEvents } from './src/gatewayClient.js';
 
 /**
  * Wires every SDK handler onto `gladys` - deliberately does NOT call
@@ -259,21 +259,9 @@ export function registerHandlers(
    */
   async function reconcileGateway() {
     try {
-      const { hostPort } = await ensureGatewayRunning(gladys);
       await withGatewayRetries(() => syncChargerMap(config.chargers, gatewayBaseUrl));
 
-      await gladys.setConnectionStatus(
-        true,
-        hostPort
-          ? {
-              en: `OCPP URL: ws://{{gladys_host}}:${hostPort}/`,
-              fr: `URL OCPP : ws://{{gladys_host}}:${hostPort}/`,
-            }
-          : {
-              en: 'Relay running, host port not yet assigned.',
-              fr: 'Relais actif, port hôte pas encore assigné.',
-            },
-      );
+      await gladys.setConnectionStatus(true);
     } catch (err) {
       logger.error('Unable to start/verify the gateway sub-container', err);
       await gladys
