@@ -10,80 +10,18 @@
   "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.9.0",
   "gladys_version": ">=4.85.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
-  "transports": [
-    "local"
-  ],
+  "transports": ["local"],
   "config_schema": [
     {
-      "key": "how_to_intro",
+      "key": "how_to",
       "type": "section",
       "label": {
         "en": "Connecting a charge point",
         "fr": "Raccorder une borne"
       },
       "description": {
-        "en": "Five steps, once per charge point. It keeps talking to your vendor's cloud exactly as before - Gladys simply sits in the middle and watches.",
-        "fr": "Cinq étapes, une fois par borne. Elle continue de dialoguer avec le cloud du fabricant exactement comme avant - Gladys se place simplement au milieu et observe."
-      }
-    },
-    {
-      "key": "how_to_step_1",
-      "type": "section",
-      "label": {
-        "en": "1. Note your current OCPP URL",
-        "fr": "1. Notez votre URL OCPP actuelle"
-      },
-      "description": {
-        "en": "In your charge point's app, write down the OCPP server URL it uses today. This is your only way back to your vendor's cloud - keep it somewhere safe.",
-        "fr": "Dans l'application de votre borne, notez l'URL du serveur OCPP qu'elle utilise aujourd'hui. C'est votre seul chemin de retour vers le cloud du fabricant - gardez-la précieusement."
-      }
-    },
-    {
-      "key": "how_to_step_2",
-      "type": "section",
-      "label": {
-        "en": "2. Point the charge point at Gladys",
-        "fr": "2. Pointez la borne vers Gladys"
-      },
-      "description": {
-        "en": "In that same app, replace it with ws://{{gladys_host}}:{{port:ocpp}}/ - this exact URL, filled in for you. The same URL works for every charge point.",
-        "fr": "Dans cette même application, remplacez-la par ws://{{gladys_host}}:{{port:ocpp}}/ - cette URL exacte, déjà complétée pour vous. La même URL fonctionne pour toutes vos bornes."
-      }
-    },
-    {
-      "key": "how_to_step_3",
-      "type": "section",
-      "label": {
-        "en": "3. Add it to Gladys",
-        "fr": "3. Ajoutez-la à Gladys"
-      },
-      "description": {
-        "en": "It connects straight away and appears in the Discovery tab, already supervised. Add it from there.",
-        "fr": "Elle se connecte aussitôt et apparaît dans l'onglet Découverte, déjà supervisée. Ajoutez-la depuis là."
-      }
-    },
-    {
-      "key": "how_to_step_4",
-      "type": "section",
-      "label": {
-        "en": "4. Give it back its cloud",
-        "fr": "4. Rendez-lui son cloud"
-      },
-      "description": {
-        "en": "Run the \"Add a charge point\" action below, pick it from the list, and paste the URL from step 1 - exactly as the vendor app showed it.",
-        "fr": "Lancez l'action \"Ajouter une borne\" ci-dessous, choisissez-la dans la liste et collez l'URL de l'étape 1 - exactement telle que l'application du fabricant l'affichait."
-      }
-    },
-    {
-      "key": "how_to_step_5",
-      "type": "section",
-      "label": {
-        "en": "5. Done",
-        "fr": "5. C'est tout"
-      },
-      "description": {
-        "en": "The charge point reconnects on its own within seconds, and Gladys now follows it live.",
-        "fr": "La borne se reconnecte toute seule en quelques secondes, et Gladys la suit désormais en direct."
+        "en": "In your charge point's app, note down its current OCPP URL and keep every setting you find there: that's what lets you get back to normal operation if anything goes wrong.\nReplace that URL with ws://{{gladys_host}}:{{port:ocpp}}/ - the same one for every charge point. Your charge point reconnects right away and appears in the Discovery tab: add it to Gladys.\nThen come back here, in the Action section below, select your charge point and paste the OCPP URL you noted in the first step - that's what lets it keep talking to its vendor's cloud, now relayed through Gladys.",
+        "fr": "Dans l'application de votre borne, notez son URL OCPP actuelle et conservez toutes les informations de configuration qui s'y trouvent : c'est ce qui vous permettra de revenir à un fonctionnement normal en cas de problème.\nRemplacez cette URL par ws://{{gladys_host}}:{{port:ocpp}}/ - la même pour toutes vos bornes. Votre borne s'y reconnecte aussitôt et apparaît dans l'onglet Découverte : ajoutez-la à Gladys.\nRevenez ensuite ici, dans la zone Action ci-dessous, sélectionnez votre borne et saisissez l'URL OCPP notée à la première étape - c'est elle qui permet à votre borne de continuer à dialoguer avec le cloud de son fabricant, désormais relayé par Gladys."
       }
     }
   ],
@@ -95,8 +33,8 @@
         "fr": "Ajouter une borne"
       },
       "description": {
-        "en": "Step 4 above. Paste the URL exactly as the vendor app showed it. The list only offers charge points already added to Gladys - if yours is missing, add it from the Discovery tab first. Run it again anytime to correct the URL; leave the URL empty to stop relaying that charge point to its cloud.",
-        "fr": "L'étape 4 ci-dessus. Collez l'URL exactement telle que l'application du fabricant l'affichait. La liste ne propose que les bornes déjà ajoutées à Gladys - si la vôtre n'y est pas, ajoutez-la d'abord depuis l'onglet Découverte. Relancez l'action à tout moment pour corriger l'URL ; laissez l'URL vide pour cesser de relayer cette borne vers son cloud."
+        "en": "Select your charge point and paste the OCPP URL you noted from its vendor app. Only charge points already added to Gladys appear in the list. Run again anytime to update the URL, or leave it empty to stop relaying to that cloud.",
+        "fr": "Sélectionnez votre borne et collez l'URL OCPP notée depuis l'application du fabricant. Seules les bornes déjà ajoutées à Gladys apparaissent dans la liste. Relancez à tout moment pour mettre à jour l'URL, ou laissez-la vide pour cesser de relayer vers ce cloud."
       },
       "timeout_seconds": 15,
       "fields": [

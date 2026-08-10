@@ -53,9 +53,9 @@ the middle and watches.
    its vendor app. This is your only way back to the vendor's cloud — keep
    it somewhere safe.
 2. **Point the charge point at Gladys**: in that same app, replace the URL
-   with the one shown in step 2 of the integration's **Configuration**
-   screen walkthrough — it's filled in for you, address and port included.
-   The same URL works for **every** charge point.
+   with the one shown in the walkthrough on the integration's
+   **Configuration** screen — it's filled in for you, address and port
+   included. The same URL works for **every** charge point.
 3. **Add it to Gladys**: it connects immediately and appears in the
    **Discovery** tab, already supervised. Add it from there.
 4. **Give it back its cloud**: on the Configuration screen, run the

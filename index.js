@@ -266,8 +266,8 @@ export function registerHandlers(
         true,
         hostPort
           ? {
-              en: `OCPP URL: ws://<your Gladys address>:${hostPort}/`,
-              fr: `URL OCPP : ws://<adresse de votre Gladys>:${hostPort}/`,
+              en: `OCPP URL: ws://{{gladys_host}}:${hostPort}/`,
+              fr: `URL OCPP : ws://{{gladys_host}}:${hostPort}/`,
             }
           : {
               en: 'Relay running, host port not yet assigned.',

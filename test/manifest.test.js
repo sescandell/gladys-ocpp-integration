@@ -55,8 +55,10 @@ test('top-level shape', () => {
 
 test('gladys_version matches what the manifest actually needs', () => {
   // >=4.85.0: needed for the charging-station device feature category, the
-  // gateway port's `browsable` flag, and the `{{port:<name>}}` placeholder
-  // used in how_to_step_2 below.
+  // gateway port's `browsable` flag, the `{{port:<name>}}` placeholder used
+  // in the how_to section below, and \n-as-line-break rendering in
+  // config_schema/action descriptions (core PR #2788, `white-space:
+  // pre-wrap` in ConfigSchemaForm.jsx/ActionsCard.jsx).
   assert.equal(manifest.gladys_version, '>=4.85.0');
 });
 
@@ -74,26 +76,25 @@ test('config_schema holds the walkthrough and nothing else - no field stores a v
   // What is left is the one thing a form is good at here: telling the user
   // what to do, on the screen where they do it.
   //
-  // One section PER STEP, not one section holding all five: the frontend
-  // renders a description in a plain <p> (ConfigSchemaForm.jsx), so newlines
-  // collapse, and the manifest allows neither markdown nor HTML. Splitting is
-  // the only way to get a readable walkthrough - and it is what an ordered
-  // list of sections is for.
+  // A SINGLE section, its steps separated by literal \n characters: core PR
+  // #2788 renders config_schema/action descriptions with `white-space:
+  // pre-wrap` (ConfigSchemaForm.jsx), so \n is an actual line break - no
+  // need to split the walkthrough across several sections to get one.
   assert.deepEqual(
     manifest.config_schema.map((f) => f.key),
-    [
-      'how_to_intro',
-      'how_to_step_1',
-      'how_to_step_2',
-      'how_to_step_3',
-      'how_to_step_4',
-      'how_to_step_5',
-    ],
+    ['how_to'],
   );
   assert.ok(
     manifest.config_schema.every((f) => f.type === 'section'),
     'every config_schema field must stay presentational',
   );
+});
+
+test('the how_to section separates its steps with literal \\n line breaks', () => {
+  const howTo = manifest.config_schema.find((f) => f.key === 'how_to');
+  for (const [lang, text] of Object.entries(howTo.description)) {
+    assert.ok(text.includes('\n'), `how_to.description.${lang} must contain line breaks`);
+  }
 });
 
 test('add_charger action: device picker required, origin_cloud_url optional (empty = detach)', () => {
@@ -163,20 +164,20 @@ test('the gateway sub-container only publishes the OCPP port, started automatica
   // Not a web UI (a raw OCPP WebSocket endpoint): an "Open" link would be
   // useless on the Supervision screen.
   assert.equal(port.browsable, false);
-  // Named so config_schema's how_to_step_2 can embed the live URL via the
+  // Named so config_schema's how_to section can embed the live URL via the
   // {{port:ocpp}} placeholder instead of pointing the user at the
   // Supervision screen.
   assert.equal(port.name, 'ocpp');
 });
 
-test('how_to_step_2 embeds the live OCPP URL via the {{gladys_host}}/{{port:ocpp}} placeholders', () => {
-  const step2 = manifest.config_schema.find((f) => f.key === 'how_to_step_2');
+test('the how_to section embeds the live OCPP URL via the {{gladys_host}}/{{port:ocpp}} placeholders', () => {
+  const howTo = manifest.config_schema.find((f) => f.key === 'how_to');
   const gatewayPortName = manifest.containers[0].ports[0].name;
-  for (const [lang, text] of Object.entries(step2.description)) {
-    assert.match(text, /\{\{gladys_host\}\}/, `how_to_step_2.description.${lang}`);
+  for (const [lang, text] of Object.entries(howTo.description)) {
+    assert.match(text, /\{\{gladys_host\}\}/, `how_to.description.${lang}`);
     assert.ok(
       text.includes(`{{port:${gatewayPortName}}}`),
-      `how_to_step_2.description.${lang} must reference the gateway port's declared name`,
+      `how_to.description.${lang} must reference the gateway port's declared name`,
     );
   }
 });

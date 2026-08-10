@@ -57,10 +57,9 @@ simplement au milieu et observe.
    dans l'application du fabricant. C'est votre seul chemin de retour vers
    le cloud du fabricant — gardez-la précieusement.
 2. **Pointez la borne vers Gladys** : dans cette même application, remplacez
-   l'URL par celle affichée à l'étape 2 du guide de l'écran
-   **Configuration** de l'intégration — elle est déjà complétée pour vous,
-   adresse et port inclus. La même URL fonctionne pour **toutes** les
-   bornes.
+   l'URL par celle affichée dans le guide de l'écran **Configuration** de
+   l'intégration — elle est déjà complétée pour vous, adresse et port
+   inclus. La même URL fonctionne pour **toutes** les bornes.
 3. **Ajoutez-la à Gladys** : elle se connecte immédiatement et apparaît dans
    l'onglet **Découverte**, déjà supervisée. Ajoutez-la depuis là.
 4. **Rendez-lui son cloud** : sur l'écran Configuration, lancez l'action
