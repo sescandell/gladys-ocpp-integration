@@ -1,80 +1,43 @@
 # Gladys OCPP integration
 
 External integration for [Gladys Assistant](https://gladysassistant.com):
-read-only supervision of any number of OCPP charge points, each relayed
-through an embedded, companion OCPP relay to its own vendor cloud — even
-different vendors at once.
+read-only supervision of any number of OCPP 1.6J charge points, each relayed
+through an embedded, companion OCPP relay to its own vendor cloud.
 
-User-facing documentation (setup, security notes, limitations):
-[`docs/en.md`](./docs/en.md) / [`docs/fr.md`](./docs/fr.md).
+User-facing documentation: [`docs/en.md`](./docs/en.md) /
+[`docs/fr.md`](./docs/fr.md).
 
-## Protocol scope
+## Scope
 
-**OCPP 1.6J only, for now.** Being a relay doesn't make it protocol-transparent:
+- Protocol: **OCPP 1.6J only.** The relay negotiates the `ocpp1.6` WebSocket
+  subprotocol and its message parsing is written against OCPP 1.6 message
+  shapes (`gateway/src/gateway.ts`, `gateway/src/ocpp16.ts`).
+- Mode: **read-only supervision.** No `onSetValue` handler is registered;
+  the integration never sends a command to a charge point.
+- One Gladys device per charge point, one feature group per physical
+  connector.
+- Requires **Gladys `>=4.85.0`** (`gladys-assistant-integration.json`).
 
-- The WebSocket subprotocol the gateway's `RPCServer` negotiates is hardcoded
-  to `ocpp1.6` (`DEFAULT_PROTOCOLS` in `gateway/src/gateway.ts`). A charge
-  point that only offers `ocpp2.0.1`/`ocpp2.1` at the WebSocket handshake has
-  no subprotocol in common with the server and never connects at all — this
-  is rejected before any of this integration's own logic runs.
-- Even past the handshake, the state-observation logic (`observe.ts`,
-  `meterValues.ts`, `ocpp16.ts`, and `src/devices/charger.js`'s
-  `OCPP16_STATUS_MAP`) is written against OCPP 1.6's message names and
-  shapes (`StatusNotification`, `MeterValues`, `ChargePointStatus`, ...).
-  OCPP 2.x renames and restructures these (e.g. `TransactionEvent` instead
-  of `Start`/`StopTransaction`), so it wouldn't be understood even if it
-  arrived.
-- The underlying `ocpp-rpc` library does ship JSON-schema validators for
-  `ocpp2.0.1`/`ocpp2.1` too — but only for its own optional `strictMode`
-  message validation, which this gateway deliberately disables in favor of a
-  byte-faithful passthrough of whatever OCPP 1.6 traffic it sees (see
-  `gateway.ts`'s "No strictMode" comment). Their presence in the dependency
-  tree isn't OCPP 2.x support.
+## Architecture
 
-Gladys core's `charging-station` device feature category (used below) was
-itself designed to be protocol-agnostic — its enum values are aligned with
-OCPP 2.x's own status model precisely so a future OCPP 2.x integration could
-reuse it. That forward-compatibility is at the Gladys **device model**
-level, not something this **relay** currently provides.
+Two containers, declared in `gladys-assistant-integration.json`:
 
-## Why two containers
-
-A Gladys external integration's main container can never publish a network
-port — its only inbound channel is an outbound connection to Gladys itself.
-To let a physical charge point connect to this integration over the LAN, the
-OCPP relay lives in a declared **companion sub-container** (the manifest's
-`containers` field), the only mechanism Gladys provides for this. The main
-container never speaks OCPP directly: it only starts/supervises the relay
-sub-container through the SDK and polls its internal state over HTTP.
+| Container        | Role                                                                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| main (repo root) | SDK wiring: publishes devices/states to Gladys, starts/polls the `gateway` sub-container, handles the `add_charger` action. Never speaks OCPP directly.              |
+| `gateway`        | OCPP relay. Runs an `RPCServer` (charge points) and one `RPCClient` per relayed charge point (each origin cloud). Exposes a private HTTP API for the main container. |
 
 ```
-Charge point A ─┐                     Charge point B ─┐
-(OCPP 1.6J)      │                     (OCPP 1.6J)      │
-                 v  same port                          v
-┌── sub-container "gateway" (gateway/) ───────────────────┐
-│ RPCServer <-> one RPCClient per RELAYED charge point,   │
-│ routed by real OCPP identity (ChargerRegistry); an      │
-│ unconfigured one is answered locally instead (no cloud  │
-│ yet - localMode.ts) - passive observation either way,   │
-│ never decisional                                        │
-└───────────────────────────────────────────────────────────┘
-        ^  internal HTTP (private network, DNS alias "gateway")
-        |  GET /api/state, POST /api/chargers (live map sync)
-┌── main container (this repo's root) ───┐
-│ SDK wiring: starts/polls the gateway,  │
-│ publishes device(s)/states to Gladys,  │
-│ add_charger action configures routing  │
-└─────────────────────────────────────────┘
+Charge point ──OCPP 1.6J WebSocket──> gateway (RPCServer)
+                                          │
+                                          ├──OCPP 1.6J WebSocket──> origin cloud (RPCClient, once configured)
+                                          │
+                                          └──internal HTTP (private network)──> main container
+                                             GET /api/state, GET /api/events (SSE), POST /api/chargers
 ```
 
-The gateway's declared port (`containers[0].ports[0]` in the manifest) is
-named (`"name": "ocpp"`) and marked `"browsable": false`: it's a raw OCPP
-WebSocket endpoint, not a web UI, so the Supervision screen shows it as a
-plain badge instead of a dead "Open" link. Naming it also lets
-`config_schema`'s walkthrough (`how_to_step_2`) embed the live URL directly,
-`ws://{{gladys_host}}:{{port:ocpp}}/`, resolved client-side from
-`window.location.hostname` and the port's assigned `host_port`, instead of
-sending the user to the Supervision screen to read it off.
+A charge point with no configured origin cloud is answered locally by the
+gateway (`gateway/src/localMode.ts`) instead of being relayed.
 
 ## Project structure
 
@@ -82,202 +45,63 @@ sending the user to the Supervision screen to read it off.
 .
 ├─ index.js                          # SDK bootstrap, gateway lifecycle, event stream, add_charger action
 ├─ src/
-│  ├─ config.js                      # config defaults + normalization (folds in `chargers`)
-│  ├─ chargers.js                    # free-config charger store: parse/serialize/upsert/remove
-│  ├─ gatewayClient.js               # HTTP client for the "gateway" sub-container (state, event stream, live map sync)
-│  ├─ stateSync.js                   # outbound state queue: coalescing + Gladys's 100/req, 300/min limits
+│  ├─ config.js                      # config defaults + normalization
+│  ├─ chargers.js                    # charger store: parse/serialize/upsert/remove
+│  ├─ gatewayClient.js               # HTTP client for the gateway sub-container
+│  ├─ stateSync.js                   # outbound state queue (coalescing + rate limiting)
 │  └─ devices/
-│     ├─ index.js                    #   registry (single blueprint, see below)
-│     └─ charger.js                  #   one device per configured charge point (connectors are features)
+│     ├─ index.js                    #   device blueprint registry
+│     └─ charger.js                  #   charge point device: features, discovery, state mapping
 ├─ gateway/                          # standalone sub-project: the OCPP relay sub-container
 │  ├─ src/
-│  │  ├─ gateway.ts                  #   RPCServer (charge points) <-> RPCClient (each origin cloud)
-│  │  ├─ chargerRegistry.ts          #   live identity -> origin cloud URL map
-│  │  ├─ localMode.ts                #   synthesized "everything is fine" responses, no origin cloud yet
-│  │  ├─ originConnection.ts         #   generic path-segment vs. query-string identity addressing
+│  │  ├─ gateway.ts                  #   RPCServer / RPCClient wiring
+│  │  ├─ chargerRegistry.ts          #   identity -> origin cloud URL map
+│  │  ├─ localMode.ts                #   synthesized responses for unconfigured charge points
+│  │  ├─ originConnection.ts         #   path-segment vs. query-string identity addressing
 │  │  ├─ observe.ts                  #   OCPP message -> internal state updates
-│  │  ├─ changeFeed.ts               #   coalesced change notifications, pushed over SSE
+│  │  ├─ changeFeed.ts               #   change notifications pushed over SSE
 │  │  ├─ state.ts                    #   ChargerState / ConnectorState / StateStore
 │  │  ├─ meterValues.ts              #   OCPP MeterValues -> ConnectorState mapping
 │  │  ├─ ocpp16.ts                   #   OCPP 1.6 message types (TypeScript only)
-│  │  ├─ exchangeLog.ts              #   formats one relayed OCPP exchange as a stdout line
-│  │  └─ stateApi.ts                 #   internal-only GET /api/state, GET /api/events, POST /api/chargers
+│  │  ├─ exchangeLog.ts              #   relayed-exchange log formatting
+│  │  └─ stateApi.ts                 #   internal HTTP API (GET /api/state, GET /api/events, POST /api/chargers)
 │  ├─ test/                          #   node:test, own package.json/tsconfig.json
 │  └─ Dockerfile                     #   sub-container image
+├─ test/                             # main container tests (node:test)
 ├─ docs/
 │  ├─ en.md / fr.md                  # user documentation (re-hosted by Gladys)
-├─ gladys-assistant-integration.json # manifest (walkthrough section + add_charger action + "gateway" sub-container)
-├─ Dockerfile                        # main container image, Node 24 Alpine, read-only rootfs
-├─ .github/workflows/                # CI: builds + publishes BOTH images (main + gateway)
-└─ cover.png                         # catalog cover, 800×534 px, ≤150 KB
+├─ gladys-assistant-integration.json # manifest
+├─ Dockerfile                        # main container image
+├─ .github/workflows/                # CI: builds + publishes both images
+└─ cover.png                         # catalog cover image
 ```
 
-## Dynamic multi-charger discovery, one device per charge point
+## Gladys device model
 
-A charge point does NOT need to be configured to be discovered: the gateway
-accepts any connection and answers it as a permissive, "everything is fine"
-local CSMS (`gateway/src/localMode.ts`) - no origin cloud, but real state
-IS observed (status, meter values) into the same store relay mode uses. So
-it shows up in Discovery the moment it connects, whether or not it has an
-origin cloud yet - genuinely automatic, the same reason any other
-integration's discovered devices show up.
+- One device per charge point (external_id: `charger-station:<OCPP identity>`).
+- One feature group per physical connector, connector `0` (aggregate)
+  excluded. Each connector reports 6 features:
+  - `connector-status` and `charging-state` (`charging-station` category)
+  - `power`, `current`, `voltage`, `energy` (`energy-sensor` category)
+- Feature `external_id` shape: `<feature key>:<evse id>:<connector id>`
+  (e.g. `connector-status:1:1`); `evse id` is currently always `1`.
+- Each device carries its configured origin cloud URL as a device `param`.
 
-The origin cloud URL is attached separately via the `add_charger` manifest
-action - a `config_schema` is a flat, fixed list of fields, it cannot represent
-"add as many charge points as you want", so the set lives in free internal
-config storage (`src/chargers.js`, key `chargers_json`) instead, pushed live
-to the gateway sub-container (`POST /api/chargers`, see
-`gateway/src/stateApi.ts`) - no container restart needed to add, update, or
-remove one. The moment a previously-unconfigured identity gets a URL,
-`stateApi.ts` force-closes that ONE charge point's live connection
-(`gateway.ts`'s `localClients` map, since `ocpp-rpc` exposes no
-identity-keyed lookup of its own connections) - it reconnects and this time
-resolves to full relay mode. Removing a charge point's URL takes effect on
-its next reconnection, not retroactively (an already-relaying session isn't
-interrupted).
+## Configuration
 
-The `config_schema` holds a single presentational `section`: the numbered
-walkthrough (note the current OCPP URL, point the charge point at Gladys, add
-it from Discovery, run the action with the noted URL). Nothing there stores a
-value - the set of charge points cannot be a flat, fixed list of fields.
-
-The action picks the charge point through a `select` with `source:
-"devices"` - Gladys core fills that dropdown itself, so the user never
-retypes an exact OCPP identity. Two consequences worth knowing:
-
-- The value handed to the action is the device's **external_id**, not the
-  identity, hence `identityFromDeviceExternalId()` in `src/devices/charger.js`
-  (it slices by prefix length rather than splitting on `:`, so identities
-  containing separators survive).
-- Such a select only lists devices **already added to Gladys**: the core
-  endpoint behind it (`GET /api/v1/service/<selector>/device`) reads
-  `t_device`, while merely-discovered devices live in an in-memory map it
-  never queries. So a charge point must be created from Discovery before it
-  can be given an origin cloud URL - and deleting its device makes its
-  `chargers_json` entry unreachable from the action (re-add it from Discovery
-  to regain control).
-
-Uninstalling the integration is the full reset: it removes the devices, the
-config, the containers and the sub-container's own data (verified in Gladys
-core's `externalIntegration.uninstall.js`) - nothing survives, so no
-in-integration reset action is needed.
-
-`src/devices/charger.js`'s `buildDevices()` offers ONE Gladys device per
-identity in the union of `config.chargers` (configured) and the gateway's
-full observed-state map (includes auto-detected identities too). This
-matches the SDK's own discovery contract ("your integration never creates
-or deletes devices, it publishes the devices it discovers, and the user
-decides which ones to create" - the official dev docs), the same pattern a
-cloud/account-based integration uses to list devices from its own registry,
-online or not. A charge point can have several physical connectors: each
-one is a small group of features on that SAME device (`Connector <n> -
-<label>`, OCPP connector `0` - the aggregate charge point - is always
-excluded), seeded with connector 1 by default (the OCPP-conventional first,
-and for most real hardware only, connector) until the gateway actually
-observes more via `StatusNotification`. Growing the feature list of an
-already-created device surfaces as an "Update" button in Gladys - the user
-stays in control of structural changes.
-
-Each connector reports 6 features: two enums from Gladys's
-**`charging-station`** category (`connector-status` and `charging-state`)
-plus four **`energy-sensor`** measurements (power, current, voltage, total
-energy). The measurements are not `electrical-vehicle-charge`, a
-vehicle-side category: only `[energy-sensor, switch, teleinformation]`
-features are offered by Gladys's energy monitoring page, so this is what
-lets the totalizer be attached under the house meter as a sub-meter
-(`energy_parent_id`).
-
-Each feature's `external_id` carries a `<feature key>:<evse id>:<connector
-id>` suffix (e.g. `connector-status:1:1`), not just `<feature key>:<connector
-id>`: the `1` reserves the OCPP 2.x EVSE dimension (see "Protocol scope"
-above) even though this relay is 1.6-only and that segment never varies
-today. External identifiers are what Gladys ties feature history to — a
-scheme change after real devices exist loses it — so this integration
-picks the shape it would need **before** it ships to real users, rather
-than risk changing it once it can't be changed for free anymore
-(`DEFAULT_EVSE_ID` in `src/devices/charger.js`).
-
-OCPP 1.6 sends a single, more granular `ChargePointStatus`, so
-`src/devices/charger.js`'s `OCPP16_STATUS_MAP` splits it across the two
-enums following core's documented mapping - with one deviation: statuses
-outside a session (`Available`, `Reserved`, `Unavailable`, `Faulted`)
-publish `charging-state: IDLE` rather than nothing, since a Gladys feature
-holds its last value forever. An unmapped status (including the gateway's
-`Unknown` placeholder) publishes neither enum.
-
-The `charging-station` category/type slugs come from the SDK; the numeric
-value enums behind them (`CONNECTOR_STATUS`, `CHARGING_STATE`) don't - the
-SDK's device-constants mirror never exports value enums, for any category -
-so `src/devices/charger.js` still hand-keeps those, cross-checked against
-core's `constants.js`. The manifest requires `>=4.85.0`:
-`t_device_feature.category`/`type` are DB ENUMs, so an older Gladys rejects
-these features at device creation.
-
-Each device also carries its configured origin cloud URL as a `param` (not
-a `feature` - it's config, not telemetry): Gladys renders a device's
-`params` as a plain read-only table on its card, in Discovery _before_
-creation and in the device list _after_, silently kept in sync on every
-re-publish (no "Update" click needed, unlike a features structure change).
-This is the only place a charge point's configured URL is surfaced in the
-UI - a `config_schema` can't render this open-ended, per-charger data as a
-form field (Gladys config forms are a flat, fixed list of fields), and
-cramming it into the connection status message (see below) would mix
-business config into what reads as an operational/ops caption.
-
-## Live state, without polling the gateway
-
-The gateway sees every OCPP message as it happens, so waiting for a poll to
-find out about it made no sense. It publishes changes on
-`GET /api/events` (SSE), and the main container subscribes for as long as it
-runs (`streamGatewayEvents` in `src/gatewayClient.js`, reconnect loop in
-`index.js` - the stream ending is normal, that is what a gateway restart looks
-like from here).
-
-The subscription runs main container → gateway, not the reverse: the main
-container knows the gateway's fixed internal address, while nothing guarantees
-the gateway can address the main container. Each event carries the charge
-point's full observed state, so the usual case - a meter value on a known
-connector - costs no call back to the gateway; `index.js` only refreshes
-Discovery when an event brings a charge point or a connector never published
-before. `gateway/src/changeFeed.ts` coalesces bursts per identity, so a
-StatusNotification followed by MeterValues is one event, not two.
-
-**States are queued, never published straight through** (`src/stateSync.js`).
-Gladys accepts 100 states per request and 300 per minute per integration
-(`externalIntegration.saveStates.js`), and one connector can produce 6 states
-per observed message - enough for a single chatty charge point to exhaust the
-budget. The queue coalesces per feature, drops values Gladys already holds,
-spends a 300/minute budget mirroring the core's own window, and holds (never
-discards) the remainder until the window resets.
-
-Gladys's own polling stays enabled (`should_poll: true`, 60s) as a safety net:
-it costs nothing to keep, it covers a stream that died silently, and it keeps
-`poll_frequency` populated - which avoids an unguarded `devicesByPollFrequency`
-lookup in core's `device.create.js` that 500s when a device has a frequency but
-no polling.
-
-## Generic origin-cloud identity addressing
-
-Some vendor clouds expect the charge point identity in the URL's query
-string rather than as a path segment (the OCPP-standard way, and what the
-underlying `ocpp-rpc` library does automatically). `gateway/src/originConnection.ts`
-detects this **structurally** — from whether the configured origin cloud URL
-already has a query string — rather than special-casing any vendor by name.
-See that file's header comment for the exact mechanism and a documented
-caveat (a one-character trailing-slash artifact on the wire, worth
-validating against real hardware).
+- `config_schema` renders a fixed walkthrough (no editable fields).
+- The origin cloud URL for a charge point is set via the `add_charger`
+  manifest action, which picks the charge point from a `select` populated
+  with existing Gladys devices.
+- The set of configured charge points is stored in free-form config
+  (`chargers_json`, see `src/chargers.js`) and pushed live to the gateway
+  (`POST /api/chargers`) — no container restart required.
 
 ## Tested hardware
 
-| Charge point         | Protocol  | Identity addressing   | Connectors | Notes                                                                                                         |
-| -------------------- | --------- | --------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| Autel MaxiCharger AC | OCPP 1.6J | Query-string (`?sn=`) | 1          | End-to-end: relay, live `add_charger` configuration, device discovery all confirmed against the real charger. |
-
-This list only grows as hardware actually gets tested against this repo —
-absence from it doesn't mean incompatibility, just that nobody has confirmed
-it yet. If you test another charge point successfully (or run into a
-firmware quirk `gateway/src/originConnection.ts` doesn't handle), please
-open an issue or a PR adding a row here.
+| Charge point         | Protocol  | Identity addressing   | Connectors |
+| -------------------- | --------- | --------------------- | ---------- |
+| Autel MaxiCharger AC | OCPP 1.6J | Query-string (`?sn=`) | 1          |
 
 ## Run the main container locally
 
@@ -290,12 +114,6 @@ LOG_LEVEL=debug \
 npm start
 ```
 
-The three `GLADYS_*` variables are injected by the Gladys supervisor when the
-integration runs inside its sandboxed container; the SDK reads them
-automatically. Note that `reconcileGateway()` (in `index.js`) will fail to
-reach a real `gateway` sub-container outside of a full Gladys install — this
-mode is mainly useful for exercising the SDK wiring itself.
-
 ## Run the gateway sub-container locally
 
 ```bash
@@ -304,26 +122,24 @@ npm install
 GATEWAY_PORT=9321 UI_PORT=9080 npm start
 ```
 
-No env var is required anymore: the gateway starts with an empty charger
-registry and only relays charge points configured live, via
-`POST http://localhost:9080/api/chargers` (body `{"chargers": {"<identity>": "<origin cloud url>"}}`)
-— exactly what `src/gatewayClient.js`'s `syncChargerMap()` does in production.
+Configure a charger: `POST http://localhost:9080/api/chargers` with body
+`{"chargers": {"<identity>": "<origin cloud url>"}}`.
 
 ## Quality checks
 
 ```bash
 npm run format:check   # Prettier (covers gateway/**/*.ts too)
 npm run format
-npm run lint            # ESLint, main container only (gateway/ is TS, see below)
-npm test                # Main container: node's built-in test runner
+npm run lint            # ESLint, main container only
+npm test                # Main container tests
 
 cd gateway
 npm run typecheck        # tsc --noEmit
-npm test                 # Gateway sub-container: node's built-in test runner
+npm test                 # Gateway sub-container tests
 ```
 
-These checks run automatically on every push and pull request (see
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+Runs automatically on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ## Validate before publishing
 
@@ -331,34 +147,19 @@ These checks run automatically on every push and pull request (see
 npx github:GladysAssistant/integration-store .
 ```
 
-Runs the same checks as the store indexer (manifest JSON & schema, Docker
-image availability for **both** the main and the `gateway` sub-container
-image, cover image, code rules). See the
-[integration store](https://github.com/GladysAssistant/integration-store) for
-details.
-
 ## Publish
 
-Same 5-step flow as any Gladys external integration (fork, edit, add the
-`gladys-assistant-integration` GitHub topic, release from the Actions tab).
-The release/build workflows here are extended to publish **two** multi-arch
-images in lockstep (main + `gateway/`) — see the workflow files for the
-exact tagging scheme.
+Fork, edit, add the `gladys-assistant-integration` GitHub topic, release
+from the Actions tab. The release workflow bumps `package.json` and
+`gladys-assistant-integration.json` version fields and publishes both
+container images (main + `gateway/`) in lockstep.
 
-## Notes
+## Requirements
 
-- Built on [`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js)
-  (`^0.11.0`), from the official
-  [`integration-template-js`](https://github.com/GladysAssistant/integration-template-js).
-- Requires **Node.js ≥ 20** for the main container; the `gateway/`
-  sub-project targets Node 24 (matching its Docker image) and TypeScript run
-  natively (no build step).
-- All external identifiers are prefixed with `ext:<selector>:` — always built
-  with `gladys.externalIds(type, platformId)`.
-- Replace `cover.png` with a real 800×534 px image (≤150 KB, PNG or JPEG)
-  before publishing — the bundled one is a placeholder gradient.
-- Double-check `gladys_version` in the manifest against real Gladys server
-  release notes before publishing (not verifiable from a dev environment).
+- Node.js `>=20` for the main container.
+- Node.js 24 for the `gateway/` sub-project (TypeScript run natively, no
+  build step).
+- `@gladysassistant/integration-sdk` `^0.11.0`.
 
 ## License
 
