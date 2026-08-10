@@ -1,7 +1,7 @@
 # Charger Station
 
 **Read-only supervision.** This integration observes any
-number of OCPP charge points and shows their state in Gladys
+number of OCPP 1.6 charge points and shows their state in Gladys
 (connector status, charging state, power, current, voltage, total energy) —
 there is no way to start, stop, or limit a charge from Gladys yet.
 

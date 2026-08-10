@@ -1,7 +1,7 @@
 # Borne de recharge
 
 **Supervision en lecture seule.** Cette intégration observe un
-nombre quelconque de bornes de recharge OCPP et affiche leur état dans
+nombre quelconque de bornes de recharge OCPP 1.6 et affiche leur état dans
 Gladys (statut du connecteur, état de charge, puissance, courant, tension,
 énergie totale) — il n'est pas encore possible de démarrer, arrêter ou
 limiter une charge depuis Gladys.
