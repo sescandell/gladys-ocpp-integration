@@ -41,6 +41,15 @@ Charge point A ─┐                     Charge point B ─┐
 └─────────────────────────────────────────┘
 ```
 
+The gateway's declared port (`containers[0].ports[0]` in the manifest) is
+named (`"name": "ocpp"`) and marked `"browsable": false`: it's a raw OCPP
+WebSocket endpoint, not a web UI, so the Supervision screen shows it as a
+plain badge instead of a dead "Open" link. Naming it also lets
+`config_schema`'s walkthrough (`how_to_step_2`) embed the live URL directly,
+`ws://{{gladys_host}}:{{port:ocpp}}/`, resolved client-side from
+`window.location.hostname` and the port's assigned `host_port`, instead of
+sending the user to the Supervision screen to read it off.
+
 ## Project structure
 
 ```
@@ -160,10 +169,13 @@ publish `charging-state: IDLE` rather than nothing, since a Gladys feature
 holds its last value forever. An unmapped status (including the gateway's
 `Unknown` placeholder) publishes neither enum.
 
-The `charging-station` constants are hand-copied from Gladys core - the
-SDK's mirror (0.10.0) predates that merge. The manifest requires `>=4.85.0`
-accordingly: `t_device_feature.category`/`type` are DB ENUMs, so an older
-Gladys rejects these features at device creation.
+The `charging-station` category/type slugs come from the SDK; the numeric
+value enums behind them (`CONNECTOR_STATUS`, `CHARGING_STATE`) don't - the
+SDK's device-constants mirror never exports value enums, for any category -
+so `src/devices/charger.js` still hand-keeps those, cross-checked against
+core's `constants.js`. The manifest requires `>=4.85.0`:
+`t_device_feature.category`/`type` are DB ENUMs, so an older Gladys rejects
+these features at device creation.
 
 Each device also carries its configured origin cloud URL as a `param` (not
 a `feature` - it's config, not telemetry): Gladys renders a device's

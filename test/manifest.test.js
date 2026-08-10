@@ -53,15 +53,11 @@ test('top-level shape', () => {
   assert.ok(manifest.docker_image.length > 0);
 });
 
-test('gladys_version stays at the last released version, not the one the features need', () => {
-  // The features published here need core PRs #2756 (charging-station) and
-  // #2779 (validation of a `source: "devices"` select), both merged AFTER
-  // the 4.84.4 bump - so they ship in 4.85.0. Declaring >=4.85.0 anyway
-  // marks the integration incompatible for everyone running a build of
-  // master, since the version bump only happens at release time: master
-  // still reports 4.84.4 while carrying both PRs. Raise this to >=4.85.0
-  // once that release is out.
-  assert.equal(manifest.gladys_version, '>=4.84.0');
+test('gladys_version matches what the manifest actually needs', () => {
+  // >=4.85.0: needed for the charging-station device feature category, the
+  // gateway port's `browsable` flag, and the `{{port:<name>}}` placeholder
+  // used in how_to_step_2 below.
+  assert.equal(manifest.gladys_version, '>=4.85.0');
 });
 
 test('V1 is read-only: the only action attaches an origin cloud, it never controls a device', () => {
@@ -161,8 +157,28 @@ test('the gateway sub-container only publishes the OCPP port, started automatica
     1,
     'no debug port should be published on the LAN - logs go through the supervision screen',
   );
-  assert.equal(gateway.ports[0].container_port, 9321);
-  assert.ok(gateway.ports[0].label?.en);
+  const port = gateway.ports[0];
+  assert.equal(port.container_port, 9321);
+  assert.ok(port.label?.en);
+  // Not a web UI (a raw OCPP WebSocket endpoint): an "Open" link would be
+  // useless on the Supervision screen.
+  assert.equal(port.browsable, false);
+  // Named so config_schema's how_to_step_2 can embed the live URL via the
+  // {{port:ocpp}} placeholder instead of pointing the user at the
+  // Supervision screen.
+  assert.equal(port.name, 'ocpp');
+});
+
+test('how_to_step_2 embeds the live OCPP URL via the {{gladys_host}}/{{port:ocpp}} placeholders', () => {
+  const step2 = manifest.config_schema.find((f) => f.key === 'how_to_step_2');
+  const gatewayPortName = manifest.containers[0].ports[0].name;
+  for (const [lang, text] of Object.entries(step2.description)) {
+    assert.match(text, /\{\{gladys_host\}\}/, `how_to_step_2.description.${lang}`);
+    assert.ok(
+      text.includes(`{{port:${gatewayPortName}}}`),
+      `how_to_step_2.description.${lang} must reference the gateway port's declared name`,
+    );
+  }
 });
 
 test('the gateway sub-container stays within sane resource limits', () => {

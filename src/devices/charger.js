@@ -63,15 +63,10 @@ const FEATURE = {
   ENERGY: 'energy',
 };
 
-// Hand-copied from Gladys core's server/utils/constants.js (>= 4.85.0): the
-// SDK's constants mirror (0.10.0) predates the category and doesn't export
-// it yet. Swap for DEVICE_FEATURE_CATEGORIES.CHARGING_STATION & co. once it
-// resyncs.
-const CHARGING_STATION_CATEGORY = 'charging-station';
-const CHARGING_STATION_TYPES = {
-  CONNECTOR_STATUS: 'connector-status',
-  CHARGING_STATE: 'charging-state',
-};
+// The SDK exports the category/type slugs (DEVICE_FEATURE_CATEGORIES /
+// DEVICE_FEATURE_TYPES) but never the numeric value enums behind them, for
+// any category - so these stay hand-kept, cross-checked against Gladys
+// core's server/utils/constants.js.
 const CONNECTOR_STATUS = {
   AVAILABLE: 0,
   OCCUPIED: 1,
@@ -183,8 +178,8 @@ function buildConnectorFeatures(ids, connectorId) {
     {
       name: label('Status'),
       external_id: ids.feature(`${FEATURE.CONNECTOR_STATUS}:${connectorId}`),
-      category: CHARGING_STATION_CATEGORY,
-      type: CHARGING_STATION_TYPES.CONNECTOR_STATUS,
+      category: DEVICE_FEATURE_CATEGORIES.CHARGING_STATION,
+      type: DEVICE_FEATURE_TYPES.CHARGING_STATION.CONNECTOR_STATUS,
       // min/max are NOT NULL in t_device_feature and only enforced by the
       // device-creation insert (a missing one 422s on "Add to Gladys", not
       // at discovery). Bounds here are the enum's own range.
@@ -197,8 +192,8 @@ function buildConnectorFeatures(ids, connectorId) {
     {
       name: label('Charging state'),
       external_id: ids.feature(`${FEATURE.CHARGING_STATE}:${connectorId}`),
-      category: CHARGING_STATION_CATEGORY,
-      type: CHARGING_STATION_TYPES.CHARGING_STATE,
+      category: DEVICE_FEATURE_CATEGORIES.CHARGING_STATION,
+      type: DEVICE_FEATURE_TYPES.CHARGING_STATION.CHARGING_STATE,
       min: 0,
       max: 5,
       read_only: true,

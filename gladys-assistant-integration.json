@@ -8,11 +8,9 @@
   },
   "version": "0.8.2",
   "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:0.8.2",
-  "gladys_version": ">=4.84.0",
+  "gladys_version": ">=4.85.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
-  "transports": [
-    "local"
-  ],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "how_to_intro",
@@ -46,8 +44,8 @@
         "fr": "2. Pointez la borne vers Gladys"
       },
       "description": {
-        "en": "In that same app, replace it with the OCPP URL shown on the Supervision screen: your Gladys address, on the port listed there. The same URL works for every charge point.",
-        "fr": "Dans cette même application, remplacez-la par l'URL OCPP affichée sur l'écran Supervision : l'adresse de votre Gladys, sur le port qui y est indiqué. La même URL fonctionne pour toutes vos bornes."
+        "en": "In that same app, replace it with ws://{{gladys_host}}:{{port:ocpp}}/ - this exact URL, filled in for you. The same URL works for every charge point.",
+        "fr": "Dans cette même application, remplacez-la par ws://{{gladys_host}}:{{port:ocpp}}/ - cette URL exacte, déjà complétée pour vous. La même URL fonctionne pour toutes vos bornes."
       }
     },
     {
@@ -130,10 +128,12 @@
       "ports": [
         {
           "container_port": 9321,
+          "name": "ocpp",
           "label": {
             "en": "OCPP",
             "fr": "OCPP"
-          }
+          },
+          "browsable": false
         }
       ],
       "memory_mb": 256,

@@ -1,30 +1,33 @@
 # Charger Station
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration
-screen (in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most.
-
-## Scope of this version
-
-**Read-only supervision, nothing else.** This integration observes any
-number of OCPP 1.6 charge points and shows their state in Gladys
+**Read-only supervision.** This integration observes any
+number of OCPP charge points and shows their state in Gladys
 (connector status, charging state, power, current, voltage, total energy) —
 there is no way to start, stop, or limit a charge from Gladys yet.
 
 ## How it works
 
-The integration runs its own OCPP relay in a companion container, started
-automatically on install. Every charge point connects to the **same** URL —
-the relay tells them apart by the identity each one announces on
-connection. A charge point doesn't need to be configured to connect: the
-relay supervises **any** connecting charge point locally right away
-(answers it normally, observes its real status), and only forwards its
-traffic to **its own** configured origin cloud once you've attached one
-(see Setup below) — so every charger keeps working exactly as before,
-nothing about any vendor's service is changed or replaced. The relay only
-_observes_ what passes through it to build the state shown in Gladys; it
-never invents or withholds anything on the wire, in either mode.
+```mermaid
+flowchart LR
+    CP(["Charge point"]) <-->|OCPP, WebSocket| Relay["OCPP relay"]
+    Relay <-->|OCPP, forwarded| Cloud[("Vendor cloud")]
+    Relay <-.->|state and config, HTTP| Gladys[("Gladys")]
+```
+
+The integration runs its own OCPP relay. Every charge point connects to the
+**same** URL — the relay tells them apart by the identity each one
+announces on connection. The moment a charge point points at that URL (see
+Setup below), the relay supervises it **automatically**, with no need to
+declare it in Gladys first: it answers it normally, so charging itself
+keeps working. But until you attach it to **its own** origin cloud, that
+cloud is completely out of the loop — nothing that goes through the
+vendor's app (remote start/stop, live status, charge history) works during
+that window, since the vendor's backend has no connection to the charge
+point at all. Attaching the origin cloud changes that: the relay then also
+forwards the charge point's traffic there, and the vendor's app works
+exactly as before again. The relay only _observes_ what passes through it
+to build the state shown in Gladys; it never invents or withholds anything
+on the wire, in either mode.
 
 ## Prerequisites
 
@@ -50,10 +53,9 @@ the middle and watches.
    its vendor app. This is your only way back to the vendor's cloud — keep
    it somewhere safe.
 2. **Point the charge point at Gladys**: in that same app, replace the URL
-   with the one shown on the integration's **Supervision** screen —
-   `ws://<your Gladys address>:<port>/`. The port is filled in for you;
-   the address is the one you use to reach Gladys. The same URL works for
-   **every** charge point.
+   with the one shown in step 2 of the integration's **Configuration**
+   screen walkthrough — it's filled in for you, address and port included.
+   The same URL works for **every** charge point.
 3. **Add it to Gladys**: it connects immediately and appears in the
    **Discovery** tab, already supervised. Add it from there.
 4. **Give it back its cloud**: on the Configuration screen, run the
