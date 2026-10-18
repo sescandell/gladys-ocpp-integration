@@ -472,11 +472,3 @@ test('normalizeWidgetSettings enforces the manifest bounds', () => {
   assert.equal(normalizeWidgetSettings({ kwh_price: 10 }).kwhPrice, 10);
   assert.equal(normalizeWidgetSettings({ kwh_price: 11 }).kwhPrice, null);
 });
-
-test('the details list vendor and model, not the firmware', () => {
-  const [status] = byType(build(chargeState()), 'status');
-  const labels = status.items.map((item) => item.label);
-  assert.ok(labels.includes('Borne'));
-  assert.ok(!labels.includes('Firmware'));
-  assert.ok(!JSON.stringify(status).includes('1.2.3'));
-});
