@@ -69,6 +69,7 @@ gateway (`gateway/src/localMode.ts`) instead of being relayed.
 │  │  └─ stateApi.ts                 #   internal HTTP API (GET /api/state, GET /api/events, POST /api/chargers)
 │  ├─ test/                          #   node:test, own package.json/tsconfig.json
 │  └─ Dockerfile                     #   sub-container image
+├─ simulator/                        # dev-only OCPP charge point simulator with a web UI (never shipped, see its README)
 ├─ test/                             # main container tests (node:test)
 ├─ docs/
 │  ├─ en.md / fr.md                  # user documentation (re-hosted by Gladys)
