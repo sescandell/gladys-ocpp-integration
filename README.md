@@ -151,6 +151,11 @@ GATEWAY_PORT=9321 UI_PORT=9080 npm start
 Configure a charger: `POST http://localhost:9080/api/chargers` with body
 `{"chargers": {"<identity>": "<origin cloud url>"}}`.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the quality checks, the charge point simulator and the
+throwaway Gladys test instance.
+
 ## Quality checks
 
 ```bash
