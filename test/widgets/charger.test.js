@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateWidgetContent } from '@gladysassistant/integration-sdk';
-import { createFakeGladys } from '../helpers/fakeGladys.js';
+import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import {
   buildChargerWidget,
   normalizeWidgetSettings,
@@ -80,6 +80,17 @@ function build(
     language,
     now: NOW,
   });
+}
+
+// What the dashboard does: ask the registered handler for the widget content.
+// The SDK's fake runs the real onWidgetGet wiring (settings and language as
+// the handler receives them) and resolves with the ack Gladys would get.
+function widgetHandler(gladys) {
+  return async (args) => {
+    const ack = await gladys.fake.widgetGet(CHARGER_WIDGET_KEY, args);
+    assert.equal(ack.success, true, ack.error);
+    return ack.data.content;
+  };
 }
 
 const ALL_TILES = Object.values(TILES);
@@ -278,18 +289,20 @@ test('handler: the cost tile appears only once Gladys has priced the connector',
   const gladys = createFakeGladys();
   const ids = chargerIds(gladys, IDENTITY);
   let lastValue = null;
-  gladys.getDevices = async () => [
+  const costDevice = () => [
     {
       external_id: ids.device,
       features: [{ external_id: `${ids.feature('energy:1:1')}_cost`, last_value: lastValue }],
     },
   ];
+  gladys.fake.devices = costDevice();
   registerChargerWidget(gladys, async () => ({ chargers: { [IDENTITY]: chargeState() } }));
-  const handler = gladys.handlers.widgets[CHARGER_WIDGET_KEY];
+  const handler = widgetHandler(gladys);
   const costTile = (content) => byType(content, 'value').find((t) => t.icon === 'credit-card');
 
   assert.equal(costTile(await handler({ settings: { device: ids.device } })), undefined);
   lastValue = 0.42;
+  gladys.fake.devices = costDevice();
   // The device list is cached for a short while (it lists every device).
   assert.equal(costTile(await handler({ settings: { device: ids.device } })), undefined);
   t.mock.timers.tick(31_000);
@@ -391,7 +404,7 @@ test('widgetSignature ignores meter values, follows status and sessions', () => 
 test('handler: resolves the device setting, reads the gateway, defaults to connector 1', async () => {
   const gladys = createFakeGladys();
   registerChargerWidget(gladys, async () => ({ chargers: { [IDENTITY]: chargeState() } }));
-  const handler = gladys.handlers.widgets[CHARGER_WIDGET_KEY];
+  const handler = widgetHandler(gladys);
 
   const content = await handler({
     settings: { device: chargerIds(gladys, IDENTITY).device },
@@ -407,7 +420,7 @@ test('handler: gateway down or unknown device give a valid placeholder, never a 
   registerChargerWidget(gladys, async () => {
     throw new Error('ECONNREFUSED');
   });
-  const handler = gladys.handlers.widgets[CHARGER_WIDGET_KEY];
+  const handler = widgetHandler(gladys);
 
   const down = await handler({
     settings: { device: chargerIds(gladys, IDENTITY).device },

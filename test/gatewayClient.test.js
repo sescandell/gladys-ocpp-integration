@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createFakeGladys } from './helpers/fakeGladys.js';
+import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import {
   GATEWAY_SUB_CONTAINER_NAME,
   GATEWAY_OCPP_CONTAINER_PORT,
@@ -22,7 +22,7 @@ test('ensureGatewayRunning: absent -> starts it', async () => {
   });
   const result = await ensureGatewayRunning(gladys);
   assert.equal(result.started, true);
-  assert.equal(gladys.startContainerCalls.length, 1);
+  assert.equal(gladys.fake.bodies('POST', '/container/gateway/start').length, 1);
 });
 
 test('ensureGatewayRunning: stopped -> restarts it', async () => {
@@ -37,7 +37,7 @@ test('ensureGatewayRunning: stopped -> restarts it', async () => {
   });
   const result = await ensureGatewayRunning(gladys);
   assert.equal(result.started, true);
-  assert.equal(gladys.startContainerCalls.length, 1);
+  assert.equal(gladys.fake.bodies('POST', '/container/gateway/start').length, 1);
 });
 
 test('ensureGatewayRunning: already running -> does NOT touch the container', async () => {
@@ -53,7 +53,7 @@ test('ensureGatewayRunning: already running -> does NOT touch the container', as
   const result = await ensureGatewayRunning(gladys);
   assert.equal(result.started, false);
   assert.equal(result.hostPort, 41234);
-  assert.equal(gladys.startContainerCalls.length, 0);
+  assert.equal(gladys.fake.bodies('POST', '/container/gateway/start').length, 0);
 });
 
 test('ensureGatewayRunning reports the assigned host port after starting', async () => {
@@ -66,8 +66,20 @@ test('ensureGatewayRunning reports the assigned host port after starting', async
       },
     ],
   });
+  // The fake host doesn't simulate the supervisor: do what it does on a
+  // start, bring the container up with a host port assigned.
+  const startContainer = gladys.startContainer.bind(gladys);
+  gladys.startContainer = async (...args) => {
+    const ack = await startContainer(...args);
+    gladys.fake.containers = gladys.fake.containers.map((c) => ({
+      ...c,
+      status: 'running',
+      ports: c.ports.map((port) => ({ ...port, host_port: 34000 })),
+    }));
+    return ack;
+  };
   const result = await ensureGatewayRunning(gladys);
-  assert.equal(result.hostPort, 34000); // fakeGladys assigns this on first start
+  assert.equal(result.hostPort, 34000);
 });
 
 test('fetchGatewayState fetches /api/state and parses JSON', async (t) => {

@@ -112,14 +112,14 @@ test('charger widget settings: options and defaults match the code', async () =>
 });
 
 test('every declared widget has a handler registered by index.js', async () => {
-  const { createFakeGladys } = await import('./helpers/fakeGladys.js');
+  const { createFakeGladys } = await import('@gladysassistant/integration-sdk/testing');
   const { registerHandlers } = await import('../index.js');
   const gladys = createFakeGladys();
   registerHandlers(gladys, { discoveryRefreshIntervalMs: 0, eventStreamEnabled: false });
-  assert.deepEqual(
-    Object.keys(gladys.handlers.widgets).sort(),
-    manifest.widgets.map((w) => w.key).sort(),
-  );
+  for (const { key } of manifest.widgets) {
+    const ack = await gladys.fake.widgetGet(key);
+    assert.notEqual(ack.error, 'not implemented', `no handler for widget "${key}"`);
+  }
 });
 
 test('V1 is read-only: the only action attaches an origin cloud, it never controls a device', () => {

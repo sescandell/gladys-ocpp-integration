@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createFakeGladys } from '../helpers/fakeGladys.js';
+import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import {
   charger,
   mapConnectorToStates,
@@ -97,7 +97,10 @@ test('mapConnectorToStates: missing numeric measurements are not published', () 
 
 test('ownsDevice: true for a charger device of this integration, false otherwise', () => {
   const gladys = createFakeGladys();
-  assert.equal(charger.ownsDevice(gladys, 'charger-station:CP-1'), true);
+  assert.equal(
+    charger.ownsDevice(gladys, gladys.externalIds('charger-station', 'CP-1').device),
+    true,
+  );
   assert.equal(charger.ownsDevice(gladys, 'some-other-device:xyz'), false);
 });
 
@@ -147,7 +150,7 @@ test('buildDevices: a configured charge point is offered even when the gateway i
   });
   assert.deepEqual(
     devices.map((d) => d.external_id),
-    ['charger-station:CP-1'],
+    ['ext:test-integration:charger-station:CP-1'],
   );
   // Seeded with the default connector 1 - nothing was ever observed.
   assert.equal(devices[0].features.length, 6);
@@ -158,7 +161,7 @@ test('buildDevices: a configured charge point that has never connected is still 
   const devices = await charger.buildDevices(gladys, config, async () => ({ chargers: {} }));
   assert.deepEqual(
     devices.map((d) => d.external_id),
-    ['charger-station:CP-1'],
+    ['ext:test-integration:charger-station:CP-1'],
   );
   // Fixed at Gladys's "every minute" tier - no longer user-configurable.
   assert.equal(devices[0].poll_frequency, 60_000);
@@ -274,7 +277,7 @@ test('buildDevices: one device for the charge point, features for every physical
   const devices = await charger.buildDevices(gladys, config, fetchState);
   assert.equal(devices.length, 1);
   const [device] = devices;
-  assert.equal(device.external_id, 'charger-station:CP-1');
+  assert.equal(device.external_id, 'ext:test-integration:charger-station:CP-1');
   assert.equal(device.features.length, 12); // 6 per connector x 2 connectors
   assert.ok(device.features.some((f) => f.external_id.endsWith(':1')));
   assert.ok(device.features.some((f) => f.external_id.endsWith(':2')));
@@ -317,14 +320,21 @@ test('buildDevices: devices from TWO different configured charge points, no cros
 
   const devices = await charger.buildDevices(gladys, multiConfig, fetchState);
   const externalIds = devices.map((d) => d.external_id).sort();
-  assert.deepEqual(externalIds, ['charger-station:CP-VENDOR-A', 'charger-station:CP-VENDOR-B']);
-  const deviceA = devices.find((d) => d.external_id === 'charger-station:CP-VENDOR-A');
+  assert.deepEqual(externalIds, [
+    'ext:test-integration:charger-station:CP-VENDOR-A',
+    'ext:test-integration:charger-station:CP-VENDOR-B',
+  ]);
+  const deviceA = devices.find(
+    (d) => d.external_id === 'ext:test-integration:charger-station:CP-VENDOR-A',
+  );
   assert.match(deviceA.name, /CP-VENDOR-A/);
   assert.equal(deviceA.features.length, 6);
   assert.deepEqual(deviceA.params, [
     { name: 'Origin cloud URL', value: 'wss://cloud-a.example.com/ocpp' },
   ]);
-  const deviceB = devices.find((d) => d.external_id === 'charger-station:CP-VENDOR-B');
+  const deviceB = devices.find(
+    (d) => d.external_id === 'ext:test-integration:charger-station:CP-VENDOR-B',
+  );
   assert.equal(deviceB.features.length, 12);
   assert.deepEqual(deviceB.params, [
     { name: 'Origin cloud URL', value: 'wss://cloud-b.example.com/ocpp' },
@@ -345,8 +355,8 @@ test('buildDevices: a configured charge point that has never connected is offere
 
   const devices = await charger.buildDevices(gladys, multiConfig, fetchState);
   assert.deepEqual(devices.map((d) => d.external_id).sort(), [
-    'charger-station:CP-CONNECTED',
-    'charger-station:CP-NEVER-SEEN',
+    'ext:test-integration:charger-station:CP-CONNECTED',
+    'ext:test-integration:charger-station:CP-NEVER-SEEN',
   ]);
 });
 
@@ -365,7 +375,7 @@ test('buildDevices: an identity only known to the gateway (auto-detected, never 
   const devices = await charger.buildDevices(gladys, normalizeConfig(), fetchState);
   assert.deepEqual(
     devices.map((d) => d.external_id),
-    ['charger-station:CP-AUTO-DETECTED'],
+    ['ext:test-integration:charger-station:CP-AUTO-DETECTED'],
   );
   assert.deepEqual(devices[0].params, [
     { name: 'Origin cloud URL', value: 'Not yet configured - run the "Add a charge point" action' },
@@ -374,7 +384,7 @@ test('buildDevices: an identity only known to the gateway (auto-detected, never 
 
 test('onPoll: publishes states for the matching charge point, all its connectors', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'charger-station:CP-1' };
+  const device = { external_id: gladys.externalIds('charger-station', 'CP-1').device };
   const fetchState = async () => ({
     chargers: {
       'CP-1': { identity: 'CP-1', connectors: { 1: { status: 'Charging', voltageV: 230 } } },
@@ -383,7 +393,9 @@ test('onPoll: publishes states for the matching charge point, all its connectors
 
   await charger.onPoll(gladys, config, device, fetchState);
   assert.ok(
-    gladys.published.some((p) => p.featureExternalId.endsWith(':voltage:1:1') && p.state === 230),
+    gladys.fake.states.some(
+      (p) => p.device_feature_external_id.endsWith(':voltage:1:1') && p.state === 230,
+    ),
   );
 });
 
@@ -393,7 +405,7 @@ test('onPoll: only publishes for the targeted device, not other configured charg
     'CP-A': 'wss://cloud-a/ocpp',
     'CP-B': 'wss://cloud-b/ocpp',
   });
-  const device = { external_id: 'charger-station:CP-A' };
+  const device = { external_id: gladys.externalIds('charger-station', 'CP-A').device };
   const fetchState = async () => ({
     chargers: {
       'CP-A': { identity: 'CP-A', connectors: { 1: { status: 'Charging', voltageV: 100 } } },
@@ -402,13 +414,17 @@ test('onPoll: only publishes for the targeted device, not other configured charg
   });
 
   await charger.onPoll(gladys, multiConfig, device, fetchState);
-  assert.ok(gladys.published.every((p) => !p.featureExternalId.includes('CP-B')));
-  assert.ok(gladys.published.some((p) => p.featureExternalId.includes('CP-A') && p.state === 100));
+  assert.ok(gladys.fake.states.every((p) => !p.device_feature_external_id.includes('CP-B')));
+  assert.ok(
+    gladys.fake.states.some(
+      (p) => p.device_feature_external_id.includes('CP-A') && p.state === 100,
+    ),
+  );
 });
 
 test('onPoll: resolves and publishes for a device whose identity was never configured (auto-detected only)', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'charger-station:CP-AUTO-DETECTED' };
+  const device = { external_id: gladys.externalIds('charger-station', 'CP-AUTO-DETECTED').device };
   const fetchState = async () => ({
     chargers: {
       'CP-AUTO-DETECTED': {
@@ -421,34 +437,36 @@ test('onPoll: resolves and publishes for a device whose identity was never confi
   // normalizeConfig() with no chargers_json - nothing configured.
   await charger.onPoll(gladys, normalizeConfig(), device, fetchState);
   assert.ok(
-    gladys.published.some((p) => p.featureExternalId.endsWith(':voltage:1:1') && p.state === 42),
+    gladys.fake.states.some(
+      (p) => p.device_feature_external_id.endsWith(':voltage:1:1') && p.state === 42,
+    ),
   );
 });
 
 test('onPoll: does nothing when the charge point reports no connector', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'charger-station:CP-1' };
+  const device = { external_id: gladys.externalIds('charger-station', 'CP-1').device };
   const fetchState = async () => ({ chargers: { 'CP-1': { identity: 'CP-1', connectors: {} } } });
 
   await charger.onPoll(gladys, config, device, fetchState);
-  assert.equal(gladys.published.length, 0);
+  assert.equal(gladys.fake.states.length, 0);
 });
 
 test('onPoll: does nothing when the gateway knows no charge point at all', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'charger-station:CP-1' };
+  const device = { external_id: gladys.externalIds('charger-station', 'CP-1').device };
 
   await charger.onPoll(gladys, config, device, async () => ({ chargers: {} }));
-  assert.equal(gladys.published.length, 0);
+  assert.equal(gladys.fake.states.length, 0);
 });
 
 test('onPoll: does not throw when the gateway is unreachable (transient during startup/restart)', async () => {
   const gladys = createFakeGladys();
-  const device = { external_id: 'charger-station:CP-1' };
+  const device = { external_id: gladys.externalIds('charger-station', 'CP-1').device };
   const fetchState = async () => {
     throw new Error('connect ECONNREFUSED 172.18.0.3:9080');
   };
 
   await assert.doesNotReject(() => charger.onPoll(gladys, config, device, fetchState));
-  assert.equal(gladys.published.length, 0);
+  assert.equal(gladys.fake.states.length, 0);
 });
