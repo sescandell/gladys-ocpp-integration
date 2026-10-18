@@ -1,9 +1,11 @@
 # Charger Station
 
-**Read-only supervision.** This integration observes any
+**Supervision.** This integration observes any
 number of OCPP 1.6 charge points and shows their state in Gladys
-(connector status, charging state, power, current, voltage, total energy) —
-there is no way to start, stop, or limit a charge from Gladys yet.
+(connector status, charging state, power, current, voltage, total energy).
+There is no way to start, stop, or limit a charge from Gladys yet; the only
+command is the permanent cable lock of Autel charge points (see "Cable lock"
+below).
 
 ## How it works
 
@@ -115,6 +117,30 @@ integration about every change it observes rather than being asked at
 intervals. A charge point that connects for the first time also appears in
 Discovery on its own, without waiting for a refresh.
 
+## Cable lock (Autel)
+
+Autel charge points can keep their cable **permanently locked** in the
+connector (vendor feature, not part of standard OCPP). On those charge points,
+each connector gets a **Cable lock** switch, which you can use in Gladys
+(dashboard, scenes…) and in the widget. It only appears once the charge point
+has confirmed it has the function: shortly after it connects, the relay asks
+it for its list of supported functions (a standard OCPP request, the vendor's
+own cloud does the same).
+
+- The charge point **never reports** this state by itself. The integration
+  learns it from the lock and unlock commands it sees go by — whether sent
+  from Gladys or from the vendor's app (the app's commands travel through the
+  relay once the charge point is attached to its origin cloud, see Setup). The
+  switch therefore shows **no value** until the first command, and the widget
+  offers both "Lock" and "Unlock" until then.
+- A command done with the vendor's app **without** the relay in between
+  (Bluetooth, direct Wi-Fi) cannot be seen: the switch then shows the last
+  command it knew about.
+- The relay forgets the state when it restarts: it shows nothing again until
+  the next command.
+- If a charge point was created before this version, click **Update** on its
+  device card so the switch appears.
+
 ## Dashboard widget
 
 Add a **Charge point** box to a dashboard and pick the charge point. A widget
@@ -125,14 +151,15 @@ At the top, the widget always says what the connector is doing right now, in
 plain words, with the session duration while charging. The rest is up to the
 widget settings:
 
-| Setting                       | Default                                       | Effect                                                                                                                                                          |
-| ----------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Connector**                 | 1                                             | The connector shown.                                                                                                                                            |
-| **Tiles**                     | Power, Session energy, Session duration, Cost | Any of: live power, energy and duration of the current session (or of the last one when idle), cost, max power offered by the charge point, meter total energy. |
-| **Chart**                     | Automatic                                     | _Automatic_: power curve while charging, energy of the recent sessions otherwise. Or always one of them, or none.                                               |
-| **Power curve period**        | Last 12 hours                                 | From the last hour to the last week.                                                                                                                            |
-| **Price per kWh (€)**         | empty                                         | See "Cost" below.                                                                                                                                               |
-| **Show charge point details** | yes                                           | Connector status, limit offered by the charge point, error code if any, last message to the relay, vendor and model.                                            |
+| Setting                            | Default                                       | Effect                                                                                                                                                                  |
+| ---------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connector**                      | 1                                             | The connector shown.                                                                                                                                                    |
+| **Tiles**                          | Power, Session energy, Session duration, Cost | Any of: live power, energy and duration of the current session (or of the last one when idle), cost, max power offered by the charge point, meter total energy.         |
+| **Chart**                          | Automatic                                     | _Automatic_: power curve while charging, energy of the recent sessions otherwise. Or always one of them, or none.                                                       |
+| **Power curve period**             | Last 12 hours                                 | From the last hour to the last week.                                                                                                                                    |
+| **Price per kWh (€)**              | empty                                         | See "Cost" below.                                                                                                                                                       |
+| **Show charge point details**      | yes                                           | Connector status, limit offered by the charge point, error code if any, last message to the relay, vendor and model.                                                    |
+| **Show the charge point controls** | yes                                           | Buttons for what the charge point can be told to do, if anything (see "Cable lock"): the button does the opposite of the known state, both buttons while it is unknown. |
 
 A tile with nothing to show yet (no session, for instance) is hidden. A widget
 has limited room: with both the chart **and** the details, only the first 5
@@ -194,8 +221,9 @@ relay. Keep this in mind on a shared or untrusted network.
   rare overlap in practice (attaching a cloud is usually done once, right
   after first connecting) — if it happens, the affected session's data may
   not reach the origin cloud correctly; the next session is unaffected.
-- **No control from Gladys.** Starting, stopping, or limiting a charge is not
-  possible in this version.
+- **Almost no control from Gladys.** Starting, stopping, or limiting a charge is
+  not possible in this version; the cable lock of Autel charge points is the
+  only command.
 
 ## Troubleshooting
 

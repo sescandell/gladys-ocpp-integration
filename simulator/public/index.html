@@ -404,6 +404,7 @@
             <div class="readout"><b class="meterKwh">–</b><span>Compteur</span></div>
             <div class="readout"><b class="currentA">–</b><span>Courant</span></div>
             <div class="readout"><b class="tx">–</b><span>Transaction</span></div>
+            <div class="readout"><b class="lock">–</b><span>Verrou câble</span></div>
           </div>
           <div class="row actions"></div>
           <div class="row" style="margin-top: 12px">
@@ -484,6 +485,9 @@
             `${(connector.meterWh / 1000).toFixed(2)} kWh`;
           card.querySelector('.currentA').textContent = `${connector.currentA} A`;
           card.querySelector('.tx').textContent = connector.transactionId ?? '–';
+          card.querySelector('.lock').textContent = connector.permanentLock
+            ? 'verrouillé'
+            : 'libre';
           const charging = connector.transactionId !== null;
           for (const button of card.querySelectorAll('button')) button.disabled = !connected;
           const byAction = (name) => [...card.querySelectorAll(`[data-action="${name}"]`)];

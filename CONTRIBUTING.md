@@ -91,6 +91,8 @@ docker network rm gladys-integrations   # only if it is left over
   concerns, as described in the [README](README.md#architecture).
 - `simulator/` and `dev/` are development tools only: they are not copied into either Docker image
   (explicit `COPY` lines in both `Dockerfile`s, plus the root `.dockerignore`). Keep it that way.
+- Anything specific to one manufacturer goes in a `vendors/<name>/` folder (see the
+  [README](README.md#vendor-modules)), never in the generic OCPP code: a test fails otherwise.
 - Add or update tests with the code, and keep `docs/en.md` and `docs/fr.md` in sync when behaviour
   visible to users changes.
 - If you touch the manifest (`gladys-assistant-integration.json`), validate it:

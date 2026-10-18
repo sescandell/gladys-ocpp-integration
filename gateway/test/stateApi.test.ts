@@ -4,6 +4,7 @@ import { createStateApiServer, type LocalClient } from '../src/stateApi.ts';
 import { StateStore } from '../src/state.ts';
 import { ChargerRegistry } from '../src/chargerRegistry.ts';
 import { createChangeFeed, type ChangeFeed } from '../src/changeFeed.ts';
+import { CommandError } from '../src/commandError.ts';
 
 async function withServer(
   t: any,
@@ -224,4 +225,48 @@ test('GET /api/events unsubscribes when the subscriber goes away', async (t) => 
     }
     assert.equal(changeFeed.listenerCount, 0);
   });
+});
+
+test('POST .../commands/<name> relays to the commands and maps their failures to HTTP statuses', async (t) => {
+  const run = mock.fn(
+    async (identity: string, _connectorId: number, _name: string, _value: unknown) => {
+      if (identity === 'OFFLINE') throw new CommandError(409, 'OFFLINE is not connected');
+    },
+  );
+  const server = createStateApiServer(
+    new StateStore(),
+    new ChargerRegistry(),
+    new Map(),
+    undefined,
+    {
+      run,
+      probe: async () => {},
+    },
+  );
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const { port } = server.address() as { port: number };
+  const post = (path: string, body: string) =>
+    fetch(`http://127.0.0.1:${port}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+  const ok = await post(
+    '/api/chargers/AE%209/connectors/2/commands/some-command',
+    '{"value":true}',
+  );
+  assert.equal(ok.status, 200);
+  assert.deepEqual(run.mock.calls[0].arguments, ['AE 9', 2, 'some-command', true]);
+
+  const offline = await post('/api/chargers/OFFLINE/connectors/1/commands/x', '{"value":false}');
+  assert.equal(offline.status, 409);
+  assert.equal(((await offline.json()) as any).success, false);
+
+  const notJson = await post('/api/chargers/CP/connectors/1/commands/x', 'nope');
+  assert.equal(notJson.status, 400);
+  const malformed = await post('/api/chargers/%E0%A4%A/connectors/1/commands/x', '{"value":true}');
+  assert.equal(malformed.status, 400);
+  assert.equal(run.mock.callCount(), 2);
 });

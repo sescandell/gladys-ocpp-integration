@@ -50,6 +50,17 @@ export interface TransactionRecord {
   stopReason: string | null;
 }
 
+/**
+ * What a vendor module (see vendors/) knows about one charge point, kept apart
+ * from the OCPP state above so the core never has to know any manufacturer.
+ * `connectors` holds free-form, per-connector values owned by the module.
+ */
+export interface VendorData {
+  /** Does the charge point really offer this vendor's extensions? Decided by the module. */
+  supported: boolean;
+  connectors: Record<number, Record<string, unknown>>;
+}
+
 /** Number of closed transactions kept for recent history. */
 const HISTORY_LIMIT = 20;
 
@@ -63,6 +74,8 @@ export interface ChargerStateJSON {
   /** Transactions in progress (one per connector in practice). */
   transactions: TransactionRecord[];
   history: TransactionRecord[];
+  /** Per vendor module id, see VendorData. */
+  extensions: Record<string, VendorData>;
 }
 
 export class ChargerState {
@@ -72,6 +85,8 @@ export class ChargerState {
   readonly transactions: Map<number, TransactionRecord> = new Map();
   /** Closed transactions, most recent first, capped at HISTORY_LIMIT. */
   readonly history: TransactionRecord[] = [];
+  /** Vendor modules' data, by module id. */
+  readonly extensions: Map<string, VendorData> = new Map();
   vendor: string | null = null;
   model: string | null = null;
   firmwareVersion: string | null = null;
@@ -95,6 +110,16 @@ export class ChargerState {
     Object.assign(current, patch);
     this.lastSeenAt = new Date().toISOString();
     return current;
+  }
+
+  /** The data of one vendor module for this charge point, created empty on first use. */
+  extension(moduleId: string): VendorData {
+    let data = this.extensions.get(moduleId);
+    if (!data) {
+      data = { supported: false, connectors: {} };
+      this.extensions.set(moduleId, data);
+    }
+    return data;
   }
 
   /** Opens a transaction: records the active entry and updates the connector. */
@@ -161,6 +186,7 @@ export class ChargerState {
       connectors: Object.fromEntries(this.connectors) as Record<number, ConnectorState>,
       transactions: [...this.transactions.values()],
       history: this.history,
+      extensions: Object.fromEntries(this.extensions),
     };
   }
 }

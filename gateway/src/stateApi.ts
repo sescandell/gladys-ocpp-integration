@@ -23,6 +23,12 @@
  *   mode (see gateway.ts's `localClients`) - naturally idempotent, since a
  *   subsequent push finds `registry.resolve()` already returning the URL
  *   and skips it.
+ * - `POST /api/chargers/<identity>/connectors/<n>/commands/<name>` - body
+ *   `{value}`: runs a vendor command (see `vendors/`, `chargerCommands.ts`)
+ *   on that connected charge point. 200 once the charge point accepted it,
+ *   otherwise `{success: false, error}` with 400 (bad value), 404 (unknown
+ *   command), 409 (not connected), 422 (this charge point does not offer it)
+ *   or 502 (refused / no answer).
  */
 
 import { createServer as createHttpServer, type Server } from 'node:http';
@@ -30,6 +36,8 @@ import { text } from 'node:stream/consumers';
 import type { StateStore } from './state.ts';
 import type { ChargerRegistry } from './chargerRegistry.ts';
 import type { ChangeFeed } from './changeFeed.ts';
+import { CommandError } from './commandError.ts';
+import type { ChargerCommands } from './chargerCommands.ts';
 
 /** The only surface stateApi.ts needs from a live charge-point connection. */
 export interface LocalClient {
@@ -44,6 +52,7 @@ export function createStateApiServer(
   registry: ChargerRegistry,
   localClients: Map<string, LocalClient>,
   changeFeed?: ChangeFeed,
+  commands?: ChargerCommands,
 ): Server {
   return createHttpServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -125,6 +134,32 @@ export function createStateApiServer(
         .catch((err: unknown) => {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ success: false, error: (err as Error).message ?? String(err) }));
+        });
+      return;
+    }
+
+    const commandRoute =
+      /^\/api\/chargers\/([^/]+)\/connectors\/(\d+)\/commands\/([a-z0-9-]+)$/.exec(url.pathname);
+    if (req.method === 'POST' && commandRoute) {
+      const connectorId = Number(commandRoute[2]);
+      const reply = (status: number, body: object) => {
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(body));
+      };
+      text(req)
+        .then(async (body) => {
+          const parsed = JSON.parse(body) as { value?: unknown };
+          if (!commands) {
+            throw new CommandError(503, 'No command channel');
+          }
+          // Inside the chain: a malformed escape must answer 400, not throw here.
+          const identity = decodeURIComponent(commandRoute[1]);
+          await commands.run(identity, connectorId, commandRoute[3], parsed.value);
+          reply(200, { success: true });
+        })
+        .catch((err: unknown) => {
+          const status = err instanceof CommandError ? err.status : 400;
+          reply(status, { success: false, error: (err as Error).message ?? String(err) });
         });
       return;
     }

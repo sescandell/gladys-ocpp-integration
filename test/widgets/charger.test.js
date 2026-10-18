@@ -267,6 +267,7 @@ test('normalizeWidgetSettings: bad or missing values fall back to the defaults',
     chartInterval: 'last-twelve-hours',
     kwhPrice: null,
     details: true,
+    controls: true,
   });
   const odd = normalizeWidgetSettings({
     connector: 0,
@@ -275,6 +276,7 @@ test('normalizeWidgetSettings: bad or missing values fall back to the defaults',
     chart_interval: 'last-decade',
     kwh_price: -1,
     details: 'no',
+    controls: 'no',
   });
   assert.equal(odd.connector, 1);
   assert.deepEqual(odd.tiles, ['power', 'cost']);
@@ -282,6 +284,7 @@ test('normalizeWidgetSettings: bad or missing values fall back to the defaults',
   assert.equal(odd.chartInterval, 'last-twelve-hours');
   assert.equal(odd.kwhPrice, null);
   assert.equal(odd.details, true);
+  assert.equal(odd.controls, true);
 });
 
 test('handler: the cost tile appears only once Gladys has priced the connector', async (t) => {

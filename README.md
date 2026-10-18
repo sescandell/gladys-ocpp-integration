@@ -1,7 +1,7 @@
 # Gladys OCPP integration
 
 External integration for [Gladys Assistant](https://gladysassistant.com):
-read-only supervision of any number of OCPP 1.6J charge points, each relayed
+supervision of any number of OCPP 1.6J charge points, each relayed
 through an embedded, companion OCPP relay to its own vendor cloud.
 
 User-facing documentation: [`docs/en.md`](./docs/en.md) /
@@ -12,8 +12,12 @@ User-facing documentation: [`docs/en.md`](./docs/en.md) /
 - Protocol: **OCPP 1.6J only.** The relay negotiates the `ocpp1.6` WebSocket
   subprotocol and its message parsing is written against OCPP 1.6 message
   shapes (`gateway/src/gateway.ts`, `gateway/src/ocpp16.ts`).
-- Mode: **read-only supervision.** No `onSetValue` handler is registered;
-  the integration never sends a command to a charge point.
+- Mode: **supervision, read-only but for one command.** The only `onSetValue`
+  handler is the Autel permanent cable lock (`permanent-lock` feature, a vendor
+  `DataTransfer`, see `gateway/src/autel.ts`): the gateway sends it to the
+  charge point on request. Its state is not reported by the charge point, so it
+  is learned from the accepted commands the gateway sees (its own, and the
+  origin cloud's in relay mode). Nothing else is ever sent to a charge point.
 - One Gladys device per charge point, one feature group per physical
   connector.
 - Requires **Gladys `>=5.1.0`** (`gladys-assistant-integration.json`).
@@ -45,6 +49,7 @@ gateway (`gateway/src/localMode.ts`) instead of being relayed.
 .
 ├─ index.js                          # SDK bootstrap, gateway lifecycle, event stream, add_charger action
 ├─ src/
+│  ├─ vendors/                       #   vendor modules of the main container (one folder per manufacturer)
 │  ├─ config.js                      # config defaults + normalization
 │  ├─ chargers.js                    # charger store: parse/serialize/upsert/remove
 │  ├─ gatewayClient.js               # HTTP client for the gateway sub-container
@@ -56,6 +61,8 @@ gateway (`gateway/src/localMode.ts`) instead of being relayed.
 │     └─ charger.js                  #   charge point device: features, discovery, state mapping
 ├─ gateway/                          # standalone sub-project: the OCPP relay sub-container
 │  ├─ src/
+│  │  ├─ vendors/                    #   vendor modules of the gateway (contract in types.ts, one folder per manufacturer)
+│  │  ├─ chargerCommands.ts          #   what the gateway initiates towards a charge point: vendor probes and commands
 │  │  ├─ gateway.ts                  #   RPCServer / RPCClient wiring
 │  │  ├─ chargerRegistry.ts          #   identity -> origin cloud URL map
 │  │  ├─ localMode.ts                #   synthesized responses for unconfigured charge points
@@ -79,6 +86,22 @@ gateway (`gateway/src/localMode.ts`) instead of being relayed.
 ├─ .github/workflows/                # CI: builds + publishes both images
 └─ cover.png                         # catalog cover image
 ```
+
+## Vendor modules
+
+The OCPP code knows no manufacturer. Whatever is specific to one - features only
+its charge points have, a state they never report on their own, a command only
+that brand understands - lives in a `vendors/<name>/` folder, on both sides:
+
+- `gateway/src/vendors/`: decides whether the charge point really has the
+  feature (a probe after boot, and what it sees pass by), observes the exchanges
+  and runs the commands. Contract: `gateway/src/vendors/types.ts`.
+- `src/vendors/`: the Gladys features, their states, the command Gladys sends
+  and the widget buttons. Contract: `src/vendors/index.js`.
+
+A module is plugged in by one line in each `index` file. Nothing outside
+`vendors/` may name a manufacturer: `test/vendors/boundary.test.js` enforces it.
+The only module today is Autel's permanent cable lock.
 
 ## Gladys device model
 

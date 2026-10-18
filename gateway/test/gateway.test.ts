@@ -13,7 +13,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RPCClient, RPCServer } from 'ocpp-rpc';
 import type { IHandlersOption } from 'ocpp-rpc';
-import { createGatewayServer, store, registry, localClients, changeFeed } from '../src/gateway.ts';
+import {
+  createGatewayServer,
+  store,
+  registry,
+  localClients,
+  changeFeed,
+  commands,
+} from '../src/gateway.ts';
 import { createStateApiServer } from '../src/stateApi.ts';
 import type {
   BootNotificationResponse,
@@ -452,4 +459,122 @@ test('a real OCPP exchange reaches the change feed, so the main container never 
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   assert.equal(store.get('CP-FEED').connector(1).status, 'Charging');
+});
+
+// A charge point that answers like a real Autel one: it lists the lock among its
+// functions and obeys the lock command.
+function autelChargePoint(port: number, identity: string) {
+  const client = new RPCClient({
+    endpoint: `ws://localhost:${port}`,
+    identity,
+    protocols: ['ocpp1.6'],
+    reconnect: false,
+  } as ClientOptions);
+  const received: { method: string; params: unknown }[] = [];
+  client.handle('DataTransfer', async ({ params }: IHandlersOption) => {
+    received.push({ method: 'DataTransfer', params });
+    return { status: 'Accepted', data: '{"status":0}' };
+  });
+  client.handle('GetConfiguration', async ({ params }: IHandlersOption) => {
+    received.push({ method: 'GetConfiguration', params });
+    return {
+      configurationKey: [
+        { key: 'SupportedFunctionLists', readonly: true, value: 'WIFI,PerManentLock,CT' },
+      ],
+    };
+  });
+  return { client, received };
+}
+
+const lockOf = (identity: string) =>
+  store.get(identity).extension('autel').connectors[1]?.permanentLock;
+
+async function until(condition: () => boolean) {
+  for (let i = 0; i < 200 && !condition(); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.ok(condition(), 'condition not reached in time');
+}
+
+test('Autel, LOCAL MODE: the boot probe finds the lock, then the gateway commands it', async (t) => {
+  const PORT = 19546;
+  registry.replaceMap({});
+  const gatewayServer = createGatewayServer({ probeDelayMs: 0 });
+  await gatewayServer.listen(PORT);
+  t.after(() => gatewayServer.close({}));
+
+  const { client, received } = autelChargePoint(PORT, 'AUTEL-LOCAL');
+  await client.connect();
+  t.after(() => client.close());
+  await client.call('BootNotification', { chargePointVendor: 'Autel', chargePointModel: 'AC' });
+
+  // The probe asks the function list on its own and records the answer.
+  await until(() => store.get('AUTEL-LOCAL').extension('autel').supported);
+  assert.deepEqual(received[0], {
+    method: 'GetConfiguration',
+    params: { key: ['SupportedFunctionLists'] },
+  });
+  assert.equal(lockOf('AUTEL-LOCAL'), undefined);
+
+  await commands.run('AUTEL-LOCAL', 1, 'permanent-lock', true);
+  assert.deepEqual(received[1], {
+    method: 'DataTransfer',
+    params: {
+      vendorId: 'Autel',
+      messageId: 'PermanentLockConnector',
+      data: { connectorId: 1, lock: true },
+    },
+  });
+  assert.equal(lockOf('AUTEL-LOCAL'), true);
+});
+
+test('Autel, RELAY MODE: a lock set from the vendor app (through the origin cloud) is observed', async (t) => {
+  const PORT = 19547;
+  const CLOUD_PORT = 19548;
+  const { primaryServer, clients } = fakePrimaryServer(CLOUD_PORT);
+  await primaryServer.listen(CLOUD_PORT);
+  t.after(() => primaryServer.close({}));
+  registry.replaceMap({ 'AUTEL-RELAY': `ws://localhost:${CLOUD_PORT}` });
+  const gatewayServer = createGatewayServer({ probeDelayMs: 0 });
+  await gatewayServer.listen(PORT);
+  t.after(() => gatewayServer.close({}));
+
+  const { client } = autelChargePoint(PORT, 'AUTEL-RELAY');
+  await client.connect();
+  t.after(() => client.close());
+  await client.call('BootNotification', { chargePointVendor: 'Autel', chargePointModel: 'AC' });
+  await until(() => store.get('AUTEL-RELAY').extension('autel').supported);
+
+  // What the vendor app does: the cloud pushes the command to the charge point.
+  await clients.get('AUTEL-RELAY').call('DataTransfer', {
+    vendorId: 'Autel',
+    messageId: 'PermanentLockConnector',
+    data: { connectorId: 1, lock: true },
+  });
+  assert.equal(lockOf('AUTEL-RELAY'), true);
+
+  // And the gateway's own command works in relay mode too.
+  await commands.run('AUTEL-RELAY', 1, 'permanent-lock', false);
+  assert.equal(lockOf('AUTEL-RELAY'), false);
+});
+
+test('a charge point of another vendor is never probed, nor offered the command', async (t) => {
+  const PORT = 19549;
+  registry.replaceMap({});
+  const gatewayServer = createGatewayServer({ probeDelayMs: 0 });
+  await gatewayServer.listen(PORT);
+  t.after(() => gatewayServer.close({}));
+
+  const { client, received } = autelChargePoint(PORT, 'OTHER-1');
+  await client.connect();
+  t.after(() => client.close());
+  await client.call('BootNotification', { chargePointVendor: 'Wallbox', chargePointModel: 'W' });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  assert.deepEqual(received, []);
+  assert.equal(store.get('OTHER-1').extensions.size, 0);
+  await assert.rejects(
+    commands.run('OTHER-1', 1, 'permanent-lock', true),
+    (err: { status?: number }) => err.status === 422,
+  );
 });
