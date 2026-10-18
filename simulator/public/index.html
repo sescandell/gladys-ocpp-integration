@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Simulateur de borne OCPP</title>
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --card: #ffffff;
+        --text: #1d2330;
+        --muted: #667085;
+        --border: #dde1e8;
+        --accent: #2563eb;
+        --accent-text: #ffffff;
+        --ok: #16803c;
+        --warn: #b45309;
+        --bad: #b42318;
+        --code: #eef0f4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #11141a;
+          --card: #1a1f29;
+          --text: #e6e9ef;
+          --muted: #97a0b0;
+          --border: #2c3341;
+          --accent: #5b8def;
+          --accent-text: #0b0f17;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --bad: #f87171;
+          --code: #0f1218;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 12px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      }
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      input,
+      select {
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 9px;
+        min-width: 0;
+      }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 12px;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-text);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: end;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid currentColor;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .connector h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .readouts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .readout b {
+        display: block;
+        font-size: 18px;
+      }
+      .readout span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .scenario {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        display: grid;
+        gap: 6px;
+        align-content: space-between;
+      }
+      .scenario p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      #log {
+        background: var(--code);
+        border-radius: 8px;
+        padding: 10px;
+        height: 280px;
+        overflow: auto;
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      #log div {
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 8px 0 0;
+      }
+      #error {
+        color: var(--bad);
+        min-height: 1.4em;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="head">
+        <h1>Simulateur de borne OCPP 1.6</h1>
+        <div>
+          <span id="connection" class="badge muted">…</span>
+          <span id="scenarioBadge" class="badge warn" hidden></span>
+        </div>
+      </div>
+      <p id="error"></p>
+
+      <section class="card">
+        <h2>Connexion</h2>
+        <div class="grid">
+          <label style="grid-column: span 2"
+            >URL du relais (celle de l'intégration, sans l'identité)
+            <input id="url" placeholder="ws://192.168.1.50:34001/" />
+          </label>
+          <label>Identité OCPP <input id="identity" /></label>
+          <label>Fabricant <input id="vendor" /></label>
+          <label>Modèle <input id="model" /></label>
+          <label>Firmware <input id="firmwareVersion" /></label>
+          <label
+            >Connecteurs (1 à 10) <input id="connectors" type="number" min="1" max="10"
+          /></label>
+          <label
+            >Puissance max (W) <input id="maxPowerW" type="number" min="1000" step="100"
+          /></label>
+          <label>Tension (V) <input id="voltageV" type="number" min="100" max="450" /></label>
+          <label>Compteur initial (Wh) <input id="initialMeterWh" type="number" min="0" /></label>
+          <label>Envoi des mesures (s) <input id="meterIntervalSec" type="number" min="1" /></label>
+          <label
+            >Accélération de l'énergie (×)
+            <input id="speed" type="number" min="1" max="3600" />
+          </label>
+        </div>
+        <div class="row" style="margin-top: 12px">
+          <button id="connect" class="primary">Connecter</button>
+          <button id="disconnect">Déconnecter</button>
+        </div>
+        <p class="hint">
+          Le port du relais est affiché dans la supervision de l'intégration Gladys (URL OCPP). La
+          configuration est enregistrée dès que vous quittez un champ ; elle s'applique à la
+          prochaine connexion. L'accélération multiplie l'énergie délivrée : à ×60, une minute
+          réelle de charge ajoute l'énergie d'une heure.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Scénarios</h2>
+        <div class="row" style="margin-bottom: 12px">
+          <label
+            >Connecteur <input id="scConnector" type="number" min="1" value="1" style="width: 90px"
+          /></label>
+          <label
+            >Durée de charge (s)
+            <input id="scDuration" type="number" min="5" value="60" style="width: 140px"
+          /></label>
+          <label
+            >Puissance (W, vide = max)
+            <input id="scPower" type="number" min="0" style="width: 160px"
+          /></label>
+          <button id="scStop">Arrêter le scénario</button>
+        </div>
+        <div id="scenarios" class="grid"></div>
+      </section>
+
+      <section
+        id="connectorCards"
+        class="grid"
+        style="grid-template-columns: repeat(auto-fit, minmax(340px, 1fr))"
+      ></section>
+
+      <section class="card">
+        <h2>Échanges OCPP</h2>
+        <div id="log"></div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const CONFIG_FIELDS = [
+        'url',
+        'identity',
+        'vendor',
+        'model',
+        'firmwareVersion',
+        'connectors',
+        'maxPowerW',
+        'voltageV',
+        'initialMeterWh',
+        'meterIntervalSec',
+        'speed',
+      ];
+      const NUMERIC = new Set([
+        'connectors',
+        'maxPowerW',
+        'voltageV',
+        'initialMeterWh',
+        'meterIntervalSec',
+        'speed',
+      ]);
+      const STATUS_CLASS = {
+        Available: 'ok',
+        Preparing: 'warn',
+        Charging: 'ok',
+        SuspendedEV: 'warn',
+        SuspendedEVSE: 'warn',
+        Finishing: 'warn',
+        Reserved: 'muted',
+        Unavailable: 'muted',
+        Faulted: 'bad',
+      };
+      let state = null;
+      let renderedShape = '';
+
+      function showError(message) {
+        $('error').textContent = message || '';
+      }
+
+      async function api(method, path, body) {
+        try {
+          const res = await fetch(path, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+          showError('');
+          return data;
+        } catch (err) {
+          showError(err.message);
+          return null;
+        }
+      }
+
+      // --- Connection form ---------------------------------------------------
+      for (const key of CONFIG_FIELDS) {
+        $(key).addEventListener('change', async () => {
+          const value = NUMERIC.has(key) ? Number($(key).value) : $(key).value.trim();
+          await api('PUT', '/api/config', { [key]: value });
+        });
+      }
+      $('connect').addEventListener('click', () => api('POST', '/api/connect'));
+      $('disconnect').addEventListener('click', () => api('POST', '/api/disconnect'));
+      $('scStop').addEventListener('click', () => api('POST', '/api/scenarios/stop'));
+
+      function fillConfig(config) {
+        for (const key of CONFIG_FIELDS) {
+          if (document.activeElement !== $(key)) $(key).value = config[key] ?? '';
+        }
+      }
+
+      // --- Scenarios ---------------------------------------------------------
+      function renderScenarios(scenarios) {
+        const box = $('scenarios');
+        if (box.childElementCount === scenarios.length) return;
+        box.innerHTML = '';
+        for (const scenario of scenarios) {
+          const el = document.createElement('div');
+          el.className = 'scenario';
+          el.innerHTML = '<b></b><p></p><button>Lancer</button>';
+          el.querySelector('b').textContent = scenario.label;
+          el.querySelector('p').textContent = scenario.description;
+          el.querySelector('button').addEventListener('click', () =>
+            api('POST', `/api/scenarios/${scenario.key}`, {
+              connector: $('scConnector').value,
+              durationSec: $('scDuration').value,
+              powerW: $('scPower').value,
+            }),
+          );
+          box.append(el);
+        }
+      }
+
+      // --- Connector cards ---------------------------------------------------
+      const ACTIONS = [
+        ['plug', 'Brancher', () => ({})],
+        [
+          'start',
+          'Démarrer la charge',
+          (card) => ({ powerW: card.querySelector('.power').value || undefined }),
+        ],
+        ['pause', 'Pause véhicule', () => ({ by: 'EV' })],
+        ['pause', 'Pause borne', () => ({ by: 'EVSE' })],
+        ['resume', 'Reprendre', () => ({})],
+        ['stop', 'Arrêter la charge', () => ({})],
+        ['unplug', 'Débrancher', () => ({})],
+      ];
+
+      function buildCard(connector, state) {
+        const card = document.createElement('article');
+        card.className = 'card connector';
+        card.dataset.id = connector.id;
+        card.innerHTML = `
+          <div class="head"><h3>Connecteur ${connector.id}</h3><span class="badge status"></span></div>
+          <div class="readouts">
+            <div class="readout"><b class="powerW">–</b><span>Puissance</span></div>
+            <div class="readout"><b class="meterKwh">–</b><span>Compteur</span></div>
+            <div class="readout"><b class="currentA">–</b><span>Courant</span></div>
+            <div class="readout"><b class="tx">–</b><span>Transaction</span></div>
+          </div>
+          <div class="row actions"></div>
+          <div class="row" style="margin-top: 12px">
+            <label>Puissance cible (W)
+              <input class="power" type="number" min="0" step="100" style="width: 130px" />
+            </label>
+            <button class="setPower">Appliquer</button>
+          </div>
+          <div class="row" style="margin-top: 12px">
+            <label>Défaut
+              <select class="errorCode">${state.errorCodes
+                .filter((c) => c !== 'NoError')
+                .map((c) => `<option>${c}</option>`)
+                .join('')}</select>
+            </label>
+            <button class="fault">Déclencher</button>
+            <button class="clear">Effacer</button>
+          </div>
+          <div class="row" style="margin-top: 12px">
+            <label>Forcer un statut
+              <select class="rawStatus">${state.statuses.map((s) => `<option>${s}</option>`).join('')}</select>
+            </label>
+            <button class="setStatus">Envoyer</button>
+          </div>`;
+        const actions = card.querySelector('.actions');
+        for (const [action, label, body] of ACTIONS) {
+          const button = document.createElement('button');
+          button.textContent = label;
+          button.dataset.action = action;
+          button.addEventListener('click', () =>
+            api('POST', `/api/connectors/${connector.id}/${action}`, body(card)),
+          );
+          actions.append(button);
+        }
+        card.querySelector('.setPower').addEventListener('click', () =>
+          api('POST', `/api/connectors/${connector.id}/power`, {
+            powerW: card.querySelector('.power').value,
+          }),
+        );
+        card.querySelector('.fault').addEventListener('click', () =>
+          api('POST', `/api/connectors/${connector.id}/fault`, {
+            errorCode: card.querySelector('.errorCode').value,
+          }),
+        );
+        card
+          .querySelector('.clear')
+          .addEventListener('click', () =>
+            api('POST', `/api/connectors/${connector.id}/clear-fault`, {}),
+          );
+        card.querySelector('.setStatus').addEventListener('click', () =>
+          api('POST', `/api/connectors/${connector.id}/status`, {
+            status: card.querySelector('.rawStatus').value,
+          }),
+        );
+        card.querySelector('.power').value = connector.targetPowerW;
+        return card;
+      }
+
+      function renderConnectors(next) {
+        const shape = next.connectors.map((c) => c.id).join(',');
+        const box = $('connectorCards');
+        if (shape !== renderedShape) {
+          renderedShape = shape;
+          box.innerHTML = '';
+          for (const connector of next.connectors) box.append(buildCard(connector, next));
+        }
+        const connected = next.connection === 'connected';
+        for (const connector of next.connectors) {
+          const card = box.querySelector(`[data-id="${connector.id}"]`);
+          const badge = card.querySelector('.status');
+          badge.textContent =
+            connector.errorCode === 'NoError'
+              ? connector.status
+              : `${connector.status} · ${connector.errorCode}`;
+          badge.className = `badge status ${STATUS_CLASS[connector.status] ?? ''}`;
+          card.querySelector('.powerW').textContent = `${(connector.powerW / 1000).toFixed(2)} kW`;
+          card.querySelector('.meterKwh').textContent =
+            `${(connector.meterWh / 1000).toFixed(2)} kWh`;
+          card.querySelector('.currentA').textContent = `${connector.currentA} A`;
+          card.querySelector('.tx').textContent = connector.transactionId ?? '–';
+          const charging = connector.transactionId !== null;
+          for (const button of card.querySelectorAll('button')) button.disabled = !connected;
+          const byAction = (name) => [...card.querySelectorAll(`[data-action="${name}"]`)];
+          if (connected) {
+            byAction('start').forEach((b) => (b.disabled = charging));
+            byAction('stop').forEach((b) => (b.disabled = !charging));
+            byAction('pause').forEach((b) => (b.disabled = connector.status !== 'Charging'));
+            byAction('resume').forEach(
+              (b) =>
+                (b.disabled =
+                  !charging || connector.status === 'Charging' || connector.status === 'Faulted'),
+            );
+          }
+        }
+      }
+
+      // --- State -------------------------------------------------------------
+      function render(next) {
+        state = next;
+        fillConfig(next.config);
+        const labels = {
+          connected: ['Connecté', 'ok'],
+          connecting: ['Connexion…', 'warn'],
+          disconnected: ['Déconnecté', 'muted'],
+        };
+        const [text, cls] = labels[next.connection];
+        $('connection').textContent =
+          next.lastError && next.connection === 'disconnected'
+            ? `${text} · ${next.lastError}`
+            : text;
+        $('connection').className = `badge ${cls}`;
+        $('connect').disabled = next.connection !== 'disconnected';
+        $('disconnect').disabled = next.connection === 'disconnected';
+        const locked = next.connection !== 'disconnected';
+        for (const key of ['connectors', 'initialMeterWh']) $(key).disabled = locked;
+
+        const running = next.scenario && next.scenarios.find((s) => s.key === next.scenario.key);
+        $('scenarioBadge').hidden = !running;
+        $('scenarioBadge').textContent = running ? `Scénario : ${running.label}` : '';
+        $('scStop').disabled = !running;
+        renderScenarios(next.scenarios);
+        for (const button of $('scenarios').querySelectorAll('button')) {
+          button.disabled = next.connection !== 'connected' || Boolean(running);
+        }
+        renderConnectors(next);
+      }
+
+      // --- Log ---------------------------------------------------------------
+      function addLog(entry) {
+        const line = document.createElement('div');
+        const time = entry.at.slice(11, 19);
+        const arrows = { out: '→', in: '←', info: '·', error: '✕' };
+        let text = `${time} ${arrows[entry.kind] ?? ' '} `;
+        if (entry.method) {
+          text += entry.method;
+          if (entry.params) text += ` ${JSON.stringify(entry.params)}`;
+          if (entry.response) text += `  ⇒ ${JSON.stringify(entry.response)}`;
+          if (entry.kind === 'error') text += `  ${entry.text || ''}`;
+        } else {
+          text += entry.text || '';
+        }
+        line.textContent = text;
+        if (entry.kind === 'error') line.className = 'bad';
+        if (entry.kind === 'info') line.className = 'muted';
+        const log = $('log');
+        const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+        log.append(line);
+        while (log.childElementCount > 300) log.firstChild.remove();
+        if (stick) log.scrollTop = log.scrollHeight;
+      }
+
+      const events = new EventSource('/api/events');
+      events.addEventListener('init', (e) => {
+        const data = JSON.parse(e.data);
+        $('log').innerHTML = '';
+        data.logs.forEach(addLog);
+        render(data.state);
+      });
+      events.addEventListener('state', (e) => render(JSON.parse(e.data)));
+      events.addEventListener('log', (e) => addLog(JSON.parse(e.data)));
+    </script>
+  </body>
+</html>

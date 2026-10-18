@@ -33,9 +33,10 @@ n'invente ni ne retient jamais rien sur le fil, dans aucun des deux modes.
 
 ## Prérequis
 
-**Gladys 4.85.0 ou ultérieur.** L'état des bornes est publié via les
-fonctionnalités « borne de recharge » de Gladys, que les versions
-antérieures ne connaissent pas (elles refuseraient de créer l'appareil).
+**Gladys 5.1.0 ou ultérieur.** L'état des bornes est publié via les
+fonctionnalités « borne de recharge » de Gladys, et le widget de tableau de
+bord s'appuie sur les widgets d'intégration : les versions antérieures ne
+connaissent ni l'un ni l'autre.
 
 L'application ou le portail de chaque borne doit permettre de consulter et
 de modifier l'URL du serveur OCPP auquel elle se connecte. Tous les
@@ -121,6 +122,46 @@ relais signale à l'intégration chaque changement qu'il observe, au lieu d'êtr
 interrogé à intervalles réguliers. Une borne qui se connecte pour la première
 fois apparaît elle aussi toute seule dans Découverte, sans attendre un
 rafraîchissement.
+
+## Widget de tableau de bord
+
+Ajoutez une boîte **Borne de recharge** à un tableau de bord et choisissez la
+borne. Un widget affiche **un connecteur** (le 1 par défaut) : pour une borne
+à plusieurs connecteurs, ajoutez un widget par connecteur.
+
+En haut, le widget dit toujours ce que fait le connecteur en ce moment, en
+clair, avec la durée de la session pendant une charge. Le reste se règle dans
+les réglages du widget :
+
+| Réglage                              | Par défaut                                    | Effet                                                                                                                                                                                |
+| ------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Connecteur**                       | 1                                             | Le connecteur affiché.                                                                                                                                                               |
+| **Tuiles**                           | Puissance, Énergie, Durée de la session, Coût | Au choix parmi : puissance en direct, énergie et durée de la session en cours (ou de la dernière hors charge), coût, puissance max offerte par la borne, énergie totale du compteur. |
+| **Graphique**                        | Automatique                                   | _Automatique_ : courbe de puissance pendant une charge, énergie des sessions récentes sinon. Ou toujours l'un des deux, ou aucun.                                                    |
+| **Période de la courbe**             | 12 dernières heures                           | De la dernière heure à la dernière semaine.                                                                                                                                          |
+| **Prix du kWh (€)**                  | vide                                          | Voir « Coût » ci-dessous.                                                                                                                                                            |
+| **Afficher les détails de la borne** | oui                                           | Statut du connecteur, limite offerte par la borne, code d'erreur s'il y en a un, dernier échange avec le relais, fabricant et modèle.                                                |
+
+Une tuile qui n'a encore rien à afficher (pas de session, par exemple) est
+masquée. Un widget a une place limitée : avec le graphique **et** les détails,
+seules les 5 premières tuiles cochées sont affichées.
+
+### Coût
+
+- **Si l'écran Énergie de Gladys est configuré** (borne rattachée à votre
+  compteur électrique, contrat renseigné), la tuile affiche le **coût de la
+  dernière demi-heure**, calculé par Gladys avec votre contrat (heures
+  pleines / creuses, Tempo…). Gladys calcule ces coûts en tâche de fond : la
+  tuile apparaît après le premier calcul et peut avoir jusqu'à une demi-heure
+  de retard. Si la borne a été créée avant cette version, cliquez d'abord sur
+  **Mettre à jour** sur sa fiche appareil.
+- **Sinon, si vous avez saisi un prix du kWh**, la tuile affiche le **coût de
+  la session** (énergie de la session × ce prix fixe, sans heures pleines /
+  creuses).
+- **Sinon**, pas de tuile coût.
+
+Les sessions récentes sont conservées en mémoire par le relais : la liste
+repart de zéro au redémarrage de l'intégration.
 
 ## Connecteurs multiples
 

@@ -7,7 +7,7 @@
 # docs/en.md / docs/fr.md).
 # -----------------------------------------------------------------------------
 
-FROM node:24-alpine
+FROM node:26-alpine
 
 RUN apk add --no-cache dumb-init
 

@@ -10,9 +10,14 @@
 // So every state goes through this queue, which:
 //   - coalesces by feature (a value superseded before it was ever sent is
 //     simply dropped),
-//   - skips values equal to the last one published for that feature,
 //   - spends a 300/minute budget mirroring the core's own fixed window,
 //   - sends at most 100 states per call.
+//
+// Skipping the values Gladys already has (a connector status barely ever
+// changes while meter values pour in) is the job of `publishStates`: index.js
+// hands it the SDK's publishChangedStates, which also forgets what it sent
+// when the user creates, updates or deletes the device. It answers how many
+// states it really sent, which is what the budget is charged.
 //
 // Nothing is lost when the budget runs out: the queue holds and drains itself
 // as the window resets.
@@ -24,17 +29,13 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 /** Backoff after a publish failure that isn't a rate limit (gateway/core hiccup). */
 const RETRY_DELAY_MS = 5_000;
 
-function valueOf(state) {
-  return state.text === undefined ? state.state : state.text;
-}
-
 function isRateLimit(err) {
   const status = err?.status ?? err?.statusCode;
   return status === 429 || /rate.?limit|too many requests/i.test(err?.message ?? '');
 }
 
 /**
- * @param {{publishStates: (states: Array<object>) => Promise<unknown>, logger?: object,
+ * @param {{publishStates: (states: Array<object>) => Promise<{count?: number}|void>, logger?: object,
  *   maxPerRequest?: number, maxPerMinute?: number, now?: () => number}} options
  */
 export function createStatePublisher({
@@ -46,8 +47,6 @@ export function createStatePublisher({
 }) {
   /** feature external_id -> pending state (last value wins). */
   const pending = new Map();
-  /** feature external_id -> last value actually published. */
-  const published = new Map();
   let window = { count: 0, resetAt: 0 };
   let pausedUntil = 0;
   let flushing = false;
@@ -97,11 +96,8 @@ export function createStatePublisher({
         }
 
         try {
-          await publishStates(chunk);
-          window.count += chunk.length;
-          for (const state of chunk) {
-            published.set(state.device_feature_external_id, valueOf(state));
-          }
+          const result = await publishStates(chunk);
+          window.count += Number.isInteger(result?.count) ? result.count : chunk.length;
         } catch (err) {
           // Put back only what hasn't been superseded meanwhile.
           for (const state of chunk) {
@@ -128,18 +124,13 @@ export function createStatePublisher({
 
   return {
     /**
-     * Queues states for publication, dropping those that would republish a
-     * value Gladys already has.
+     * Queues states for publication.
      * @param {Array<{device_feature_external_id: string, state?: number, text?: string}>} states
      */
     enqueue(states) {
       if (stopped) return;
       for (const state of states) {
-        const featureId = state.device_feature_external_id;
-        if (!pending.has(featureId) && published.get(featureId) === valueOf(state)) {
-          continue;
-        }
-        pending.set(featureId, state);
+        pending.set(state.device_feature_external_id, state);
       }
       if (pending.size > 0) {
         flush().catch((err) => logger?.error?.('State queue flush crashed', err));

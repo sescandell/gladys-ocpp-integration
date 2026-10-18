@@ -13,17 +13,17 @@
     "test": "node --test test/**/*.test.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=26"
   },
   "dependencies": {
-    "@gladysassistant/integration-sdk": "^0.11.0"
+    "@gladysassistant/integration-sdk": "^0.15.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.8.1",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
-    "globals": "^17.9.0",
-    "prettier": "^3.9.6"
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10"
   },
   "license": "Apache-2.0"
 }

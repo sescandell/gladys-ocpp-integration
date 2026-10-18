@@ -41,23 +41,20 @@ test('publishes what it is given', async () => {
   );
 });
 
-test('a value already published is not sent again', async () => {
-  // A connector status barely ever changes while meter values pour in: without
-  // this, every single MeterValues would spend budget republishing "Charging".
-  const { batches, publishStates } = recorder();
-  const publisher = createStatePublisher({ publishStates });
+test('only the states really sent are charged to the minute budget', async () => {
+  // publishStates (the SDK's publishChangedStates) skips the values Gladys
+  // already has and says how many it sent.
+  const publisher = createStatePublisher({
+    publishStates: async () => ({ count: 0 }),
+    maxPerMinute: 2,
+  });
 
-  publisher.enqueue([state('f1', 1)]);
-  await settle();
-  publisher.enqueue([state('f1', 1)]);
-  await settle();
+  for (let i = 0; i < 5; i += 1) {
+    publisher.enqueue([state(`f${i}`, i)]);
+    await settle();
+  }
 
-  assert.equal(batches.length, 1);
-
-  publisher.enqueue([state('f1', 2)]);
-  await settle();
-  assert.equal(batches.length, 2);
-  assert.equal(batches[1][0].state, 2);
+  assert.equal(publisher.pendingCount, 0, 'nothing was sent, so the budget is intact');
 });
 
 test('a value superseded before it could be sent is dropped, last one wins', async () => {

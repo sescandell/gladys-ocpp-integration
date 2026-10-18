@@ -54,7 +54,7 @@ const DEVICE_TYPE = 'charger-station';
 
 const logger = createLogger({ name: DEVICE_TYPE });
 
-const FEATURE = {
+export const FEATURE = {
   CONNECTOR_STATUS: 'connector-status',
   CHARGING_STATE: 'charging-state',
   POWER: 'power',
@@ -67,14 +67,14 @@ const FEATURE = {
 // DEVICE_FEATURE_TYPES) but never the numeric value enums behind them, for
 // any category - so these stay hand-kept, cross-checked against Gladys
 // core's server/utils/constants.js.
-const CONNECTOR_STATUS = {
+export const CONNECTOR_STATUS = {
   AVAILABLE: 0,
   OCCUPIED: 1,
   RESERVED: 2,
   UNAVAILABLE: 3,
   FAULTED: 4,
 };
-const CHARGING_STATE = {
+export const CHARGING_STATE = {
   CHARGING: 0,
   EV_CONNECTED: 1,
   PAUSED_BY_VEHICLE: 2,
@@ -98,7 +98,7 @@ const CHARGING_STATE = {
 // ocpp-go's ChargingStateIdle doc comment, the same source core's mapping
 // cites). EV_CONNECTED ("there is a connection between EV and EVSE") is the
 // accurate value for a charge point in this state.
-const OCPP16_STATUS_MAP = {
+export const OCPP16_STATUS_MAP = {
   Available: { connectorStatus: CONNECTOR_STATUS.AVAILABLE, chargingState: null },
   Preparing: {
     connectorStatus: CONNECTOR_STATUS.OCCUPIED,
@@ -143,6 +143,23 @@ const DEFAULT_CONNECTOR_ID = 1;
 // AGGREGATE_CONNECTOR_ID above).
 const DEFAULT_EVSE_ID = 1;
 
+/**
+ * External id of one connector feature: `<device>:<featureKey>:<evse>:<connector>`.
+ * Shared by the device definition, the published states and the dashboard
+ * widget (src/widgets/charger.js), which binds tiles and charts to them.
+ * @param {import('@gladysassistant/integration-sdk').DeviceExternalIds} ids
+ * @param {string} featureKey one of FEATURE
+ * @param {number} connectorId
+ */
+export function featureExternalId(ids, featureKey, connectorId) {
+  return ids.feature(`${featureKey}:${DEFAULT_EVSE_ID}:${connectorId}`);
+}
+
+/** External ids (device + features) of the charge point `identity`. */
+export function chargerIds(gladys, identity) {
+  return gladys.externalIds(DEVICE_TYPE, identity);
+}
+
 // A discovered device's poll_frequency is NOT a free number: Gladys core
 // rejects (and fails the ENTIRE publishDiscoveredDevices call, for every
 // device in the batch) any value other than a few exact milliseconds,
@@ -169,7 +186,7 @@ export function mapConnectorToStates(ids, connectorId, connector) {
   const push = (featureKey, value) => {
     if (value === null || value === undefined || Number.isNaN(value)) return;
     states.push({
-      device_feature_external_id: ids.feature(`${featureKey}:${DEFAULT_EVSE_ID}:${connectorId}`),
+      device_feature_external_id: featureExternalId(ids, featureKey, connectorId),
       state: value,
     });
   };
@@ -201,7 +218,7 @@ function buildConnectorFeatures(ids, connectorId) {
   return [
     {
       name: label('Status'),
-      external_id: ids.feature(`${FEATURE.CONNECTOR_STATUS}:${DEFAULT_EVSE_ID}:${connectorId}`),
+      external_id: featureExternalId(ids, FEATURE.CONNECTOR_STATUS, connectorId),
       category: DEVICE_FEATURE_CATEGORIES.CHARGING_STATION,
       type: DEVICE_FEATURE_TYPES.CHARGING_STATION.CONNECTOR_STATUS,
       // min/max are NOT NULL in t_device_feature and only enforced by the
@@ -215,7 +232,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Charging state'),
-      external_id: ids.feature(`${FEATURE.CHARGING_STATE}:${DEFAULT_EVSE_ID}:${connectorId}`),
+      external_id: featureExternalId(ids, FEATURE.CHARGING_STATE, connectorId),
       category: DEVICE_FEATURE_CATEGORIES.CHARGING_STATION,
       type: DEVICE_FEATURE_TYPES.CHARGING_STATION.CHARGING_STATE,
       min: 0,
@@ -230,7 +247,7 @@ function buildConnectorFeatures(ids, connectorId) {
     // the totalizer be attached under the house meter (energy_parent_id).
     {
       name: label('Charging power'),
-      external_id: ids.feature(`${FEATURE.POWER}:${DEFAULT_EVSE_ID}:${connectorId}`),
+      external_id: featureExternalId(ids, FEATURE.POWER, connectorId),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.POWER,
       unit: DEVICE_FEATURE_UNITS.KILOWATT,
@@ -242,7 +259,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Charging current'),
-      external_id: ids.feature(`${FEATURE.CURRENT}:${DEFAULT_EVSE_ID}:${connectorId}`),
+      external_id: featureExternalId(ids, FEATURE.CURRENT, connectorId),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.CURRENT,
       unit: DEVICE_FEATURE_UNITS.AMPERE,
@@ -254,7 +271,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Voltage'),
-      external_id: ids.feature(`${FEATURE.VOLTAGE}:${DEFAULT_EVSE_ID}:${connectorId}`),
+      external_id: featureExternalId(ids, FEATURE.VOLTAGE, connectorId),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.VOLTAGE,
       unit: DEVICE_FEATURE_UNITS.VOLT,
@@ -266,7 +283,7 @@ function buildConnectorFeatures(ids, connectorId) {
     },
     {
       name: label('Total energy'),
-      external_id: ids.feature(`${FEATURE.ENERGY}:${DEFAULT_EVSE_ID}:${connectorId}`),
+      external_id: featureExternalId(ids, FEATURE.ENERGY, connectorId),
       category: DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR,
       type: DEVICE_FEATURE_TYPES.ENERGY_SENSOR.ENERGY,
       unit: DEVICE_FEATURE_UNITS.KILOWATT_HOUR,

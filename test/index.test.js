@@ -1,9 +1,8 @@
 // -----------------------------------------------------------------------------
-// Exercises registerHandlers() (index.js) against a fake SDK object, calling
-// each captured handler with the EXACT argument shape the real SDK uses
-// (verified against integration-sdk's index.d.ts - see fakeGladys.js's doc
-// comment). This is a regression test for a real bug: `onAction` invokes its
-// callback as `callback(fields)`, not `callback({ fields })` - the wrong
+// Exercises registerHandlers() (index.js) against the SDK's own fake Gladys
+// (`@gladysassistant/integration-sdk/testing`), which calls each registered
+// handler with the EXACT argument shape the real SDK uses. This is a
+// regression test for a real bug: `onAction` invokes its callback as `callback(fields)`, not `callback({ fields })` - the wrong
 // destructure crashed on `fields.identity` the moment the action ran for
 // real, and nothing here would have caught it before this file existed,
 // since index.js's own wiring wasn't unit-tested at all.
@@ -12,9 +11,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createFakeGladys } from './helpers/fakeGladys.js';
+import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import { registerHandlers } from '../index.js';
 import { GATEWAY_SUB_CONTAINER_NAME, GATEWAY_OCPP_CONTAINER_PORT } from '../src/gatewayClient.js';
+
+// The gateway sub-container as the supervisor reports it once started.
+const RUNNING_GATEWAY = [
+  {
+    name: GATEWAY_SUB_CONTAINER_NAME,
+    status: 'running',
+    ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
+  },
+];
+
+// The discovered-device lists published so far, one entry per publish.
+const discoveryBatches = (gladys) =>
+  gladys.fake.bodies('POST', '/discovered_device').map((body) => body.devices);
 
 // A fast, local stand-in for the gateway sub-container's internal HTTP API -
 // hitting the real one (fixed DNS alias "gateway") from a dev/test machine
@@ -105,16 +117,7 @@ async function setup(t, fakeGladysOptions = {}, registerOptions = {}) {
   t.after(() => server.close());
   const { port } = server.address();
 
-  const gladys = createFakeGladys({
-    containers: [
-      {
-        name: GATEWAY_SUB_CONTAINER_NAME,
-        status: 'running',
-        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
-      },
-    ],
-    ...fakeGladysOptions,
-  });
+  const gladys = createFakeGladys({ containers: RUNNING_GATEWAY, ...fakeGladysOptions });
   const handlers = registerHandlers(gladys, {
     gatewayBaseUrl: `http://127.0.0.1:${port}`,
     discoveryRefreshIntervalMs: 0,
@@ -134,66 +137,63 @@ function deviceExternalId(gladys, identity) {
 
 test('add_charger action: called with fields directly (the real SDK shape), not { fields }', async (t) => {
   const gladys = await setup(t);
-  const addCharger = gladys.handlers.actions['add_charger'];
-  assert.ok(typeof addCharger === 'function', 'add_charger must be registered');
-
-  // The exact shape gladys.onAction's callback receives in production -
-  // NOT wrapped in { fields: ... }.
-  const message = await addCharger({
+  // The SDK's fake runs the registered onAction handler with the exact
+  // arguments the real one passes, and resolves with the ack Gladys receives.
+  const ack = await gladys.fake.action('add_charger', {
     device: deviceExternalId(gladys, 'CP-1'),
     origin_cloud_url: 'wss://cloud-a/ocpp?sn=',
   });
 
-  assert.match(message.en, /CP-1.*configured/);
-  assert.equal(gladys.setConfigCalls.length, 1);
-  const stored = JSON.parse(gladys.setConfigCalls[0].chargers_json);
+  assert.equal(ack.success, true);
+  assert.match(ack.data.message.en, /CP-1.*configured/);
+  const configWrites = gladys.fake.bodies('POST', '/config');
+  assert.equal(configWrites.length, 1);
+  const stored = JSON.parse(gladys.fake.config.chargers_json);
   assert.equal(stored['CP-1'], 'wss://cloud-a/ocpp?sn=');
 });
 
 test('add_charger action: rejects a missing device selection', async (t) => {
   const gladys = await setup(t);
-  const addCharger = gladys.handlers.actions['add_charger'];
-  await assert.rejects(
-    () => addCharger({ device: '', origin_cloud_url: 'wss://cloud-a/ocpp' }),
-    /Select a charge point/,
-  );
+  const ack = await gladys.fake.action('add_charger', {
+    device: '',
+    origin_cloud_url: 'wss://cloud-a/ocpp',
+  });
+  assert.equal(ack.success, false);
+  assert.match(ack.error, /Select a charge point/);
 });
 
 test("add_charger action: rejects an external_id that isn't one of this integration's charge points", async (t) => {
   const gladys = await setup(t);
-  const addCharger = gladys.handlers.actions['add_charger'];
-  await assert.rejects(
-    () => addCharger({ device: 'ext:other:thermostat:XYZ', origin_cloud_url: 'wss://c/ocpp' }),
-    /Not one of this integration's charge points/,
-  );
+  const ack = await gladys.fake.action('add_charger', {
+    device: 'ext:other:thermostat:XYZ',
+    origin_cloud_url: 'wss://c/ocpp',
+  });
+  assert.equal(ack.success, false);
+  assert.match(ack.error, /Not one of this integration's charge points/);
 });
 
 test('add_charger action: rejects a non-ws(s) origin cloud URL', async (t) => {
   const gladys = await setup(t);
-  const addCharger = gladys.handlers.actions['add_charger'];
-  await assert.rejects(
-    () =>
-      addCharger({
-        device: deviceExternalId(gladys, 'CP-1'),
-        origin_cloud_url: 'http://cloud-a/ocpp',
-      }),
-    /valid ws:\/\/ or wss:\/\//,
-  );
+  const ack = await gladys.fake.action('add_charger', {
+    device: deviceExternalId(gladys, 'CP-1'),
+    origin_cloud_url: 'http://cloud-a/ocpp',
+  });
+  assert.equal(ack.success, false);
+  assert.match(ack.error, /valid ws:\/\/ or wss:\/\//);
 });
 
 test('add_charger action: an empty URL detaches a previously configured charge point', async (t) => {
   const gladys = await setup(t, {
     config: { chargers_json: JSON.stringify({ 'CP-1': 'wss://cloud-a/ocpp' }) },
   });
-  const addCharger = gladys.handlers.actions['add_charger'];
 
-  const message = await addCharger({
+  const ack = await gladys.fake.action('add_charger', {
     device: deviceExternalId(gladys, 'CP-1'),
     origin_cloud_url: '',
   });
 
-  assert.match(message.en, /CP-1.*detached/);
-  const stored = JSON.parse(gladys.setConfigCalls.at(-1).chargers_json);
+  assert.match(ack.data.message.en, /CP-1.*detached/);
+  const stored = JSON.parse(gladys.fake.config.chargers_json);
   assert.deepEqual(stored, {});
 });
 
@@ -208,40 +208,32 @@ test('discovery refresh: republishes once a charge point shows up in the gateway
   t.after(() => server.close());
   const { port } = server.address();
 
-  const gladys = createFakeGladys({
-    containers: [
-      {
-        name: GATEWAY_SUB_CONTAINER_NAME,
-        status: 'running',
-        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
-      },
-    ],
-  });
+  const gladys = createFakeGladys({ containers: RUNNING_GATEWAY });
   const { refreshDiscovery } = registerHandlers(gladys, {
     gatewayBaseUrl: `http://127.0.0.1:${port}`,
     discoveryRefreshIntervalMs: 0,
     eventStreamEnabled: false,
   });
 
-  await gladys.handlers.events['connected']();
-  assert.equal(gladys.discoveredDeviceBatches.length, 1);
-  assert.deepEqual(gladys.discoveredDeviceBatches[0], []);
+  await gladys.connect();
+  assert.equal(discoveryBatches(gladys).length, 1);
+  assert.deepEqual(discoveryBatches(gladys)[0], []);
 
   // Nothing moved: no second publish, so no needless websocket update.
   await refreshDiscovery();
-  assert.equal(gladys.discoveredDeviceBatches.length, 1);
+  assert.equal(discoveryBatches(gladys).length, 1);
 
   chargers = { 'CP-LATE': { identity: 'CP-LATE', connectors: { 1: { status: 'Available' } } } };
   await refreshDiscovery();
-  assert.equal(gladys.discoveredDeviceBatches.length, 2);
+  assert.equal(discoveryBatches(gladys).length, 2);
   assert.deepEqual(
-    gladys.discoveredDeviceBatches[1].map((d) => d.external_id),
-    ['charger-station:CP-LATE'],
+    discoveryBatches(gladys)[1].map((d) => d.external_id),
+    ['ext:test-integration:charger-station:CP-LATE'],
   );
 
   // Still nothing new: stays quiet.
   await refreshDiscovery();
-  assert.equal(gladys.discoveredDeviceBatches.length, 2);
+  assert.equal(discoveryBatches(gladys).length, 2);
 });
 
 test('discovery refresh: republishes when an already-known charge point reports a new connector', async (t) => {
@@ -253,23 +245,15 @@ test('discovery refresh: republishes when an already-known charge point reports 
   t.after(() => server.close());
   const { port } = server.address();
 
-  const gladys = createFakeGladys({
-    containers: [
-      {
-        name: GATEWAY_SUB_CONTAINER_NAME,
-        status: 'running',
-        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
-      },
-    ],
-  });
+  const gladys = createFakeGladys({ containers: RUNNING_GATEWAY });
   const { refreshDiscovery } = registerHandlers(gladys, {
     gatewayBaseUrl: `http://127.0.0.1:${port}`,
     discoveryRefreshIntervalMs: 0,
     eventStreamEnabled: false,
   });
 
-  await gladys.handlers.events['connected']();
-  assert.equal(gladys.discoveredDeviceBatches.length, 1);
+  await gladys.connect();
+  assert.equal(discoveryBatches(gladys).length, 1);
 
   chargers = {
     'CP-1': {
@@ -278,8 +262,8 @@ test('discovery refresh: republishes when an already-known charge point reports 
     },
   };
   await refreshDiscovery();
-  assert.equal(gladys.discoveredDeviceBatches.length, 2);
-  assert.equal(gladys.discoveredDeviceBatches[1][0].features.length, 12);
+  assert.equal(discoveryBatches(gladys).length, 2);
+  assert.equal(discoveryBatches(gladys)[1][0].features.length, 12);
 });
 
 // The gateway's SSE change stream (gateway/src/changeFeed.ts), reduced to what
@@ -330,11 +314,57 @@ test('gateway change: publishes the charge point states without calling back to 
   });
   await new Promise((resolve) => setImmediate(resolve));
 
-  const byFeature = new Map(gladys.published.map((p) => [p.featureExternalId, p.state]));
+  const byFeature = new Map(gladys.fake.states.map((p) => [p.device_feature_external_id, p.state]));
   assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':connector-status:1:1'), 1);
   assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':charging-state:1:1'), 0);
   assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':voltage:1:1'), 230);
   assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':power:1:1'), 7.2);
+});
+
+test('gateway change: a value Gladys already has is not published again', async (t) => {
+  const gladys = await setup(t);
+  const change = (voltageV) =>
+    gladys.handleGatewayChange({
+      identity: 'CP-1',
+      charger: { identity: 'CP-1', connectors: { 1: { status: 'Available', voltageV } } },
+    });
+  const voltage = deviceExternalId(gladys, 'CP-1') + ':voltage:1:1';
+  const sent = () => gladys.fake.states.filter((s) => s.device_feature_external_id === voltage);
+
+  await change(230);
+  await new Promise((resolve) => setImmediate(resolve));
+  await change(230);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent().length, 1);
+
+  await change(231);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent().length, 2);
+
+  // Delete then recreate the device in Gladys: it has no value any more, so
+  // the same reading must go out again.
+  await gladys.fake.deviceDeleted({ external_id: deviceExternalId(gladys, 'CP-1') });
+  await change(231);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent().length, 3);
+});
+
+test('gateway change: the widget is nudged on a status change, not on a meter value', async (t) => {
+  const gladys = await setup(t);
+  const change = (connector) =>
+    gladys.handleGatewayChange({
+      identity: 'CP-1',
+      charger: { identity: 'CP-1', connectors: { 1: connector } },
+    });
+
+  await change({ status: 'Available' });
+  assert.deepEqual(gladys.fake.widgetRefreshes, ['charger'], 'first sight of a charge point');
+
+  await change({ status: 'Available', powerActiveImportW: 0, voltageV: 231 });
+  assert.equal(gladys.fake.widgetRefreshes.length, 1, 'a meter value alone is not worth a re-pull');
+
+  await change({ status: 'Charging', transactionId: 3 });
+  assert.equal(gladys.fake.widgetRefreshes.length, 2);
 });
 
 test('gateway change: a new charge point refreshes Discovery, a known one does not', async (t) => {
@@ -344,41 +374,33 @@ test('gateway change: a new charge point refreshes Discovery, a known one does n
   t.after(() => server.close());
   const { port } = server.address();
 
-  const gladys = createFakeGladys({
-    containers: [
-      {
-        name: GATEWAY_SUB_CONTAINER_NAME,
-        status: 'running',
-        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
-      },
-    ],
-  });
+  const gladys = createFakeGladys({ containers: RUNNING_GATEWAY });
   const { handleGatewayChange } = registerHandlers(gladys, {
     gatewayBaseUrl: `http://127.0.0.1:${port}`,
     discoveryRefreshIntervalMs: 0,
     eventStreamEnabled: false,
   });
 
-  await gladys.handlers.events['connected']();
-  assert.equal(gladys.discoveredDeviceBatches.length, 1);
+  await gladys.connect();
+  assert.equal(discoveryBatches(gladys).length, 1);
 
   const connectors = { 1: { status: 'Available' } };
   chargers = { 'CP-1': { identity: 'CP-1', connectors } };
   await handleGatewayChange({ identity: 'CP-1', charger: { identity: 'CP-1', connectors } });
-  assert.equal(gladys.discoveredDeviceBatches.length, 2, 'a charge point never seen shows up');
+  assert.equal(discoveryBatches(gladys).length, 2, 'a charge point never seen shows up');
 
   // Same shape: the meter values that follow must not re-publish devices.
   await handleGatewayChange({
     identity: 'CP-1',
     charger: { identity: 'CP-1', connectors: { 1: { status: 'Charging' } } },
   });
-  assert.equal(gladys.discoveredDeviceBatches.length, 2);
+  assert.equal(discoveryBatches(gladys).length, 2);
 
   // A second connector reported later IS a structure change.
   const grown = { 1: { status: 'Charging' }, 2: { status: 'Available' } };
   chargers = { 'CP-1': { identity: 'CP-1', connectors: grown } };
   await handleGatewayChange({ identity: 'CP-1', charger: { identity: 'CP-1', connectors: grown } });
-  assert.equal(gladys.discoveredDeviceBatches.length, 3);
+  assert.equal(discoveryBatches(gladys).length, 3);
 });
 
 test('gateway change: an event with no identity or no charger is ignored', async (t) => {
@@ -386,7 +408,7 @@ test('gateway change: an event with no identity or no charger is ignored', async
   await gladys.handleGatewayChange({});
   await gladys.handleGatewayChange({ identity: 'CP-1' });
   await gladys.handleGatewayChange({ charger: { connectors: {} } });
-  assert.equal(gladys.published.length, 0);
+  assert.equal(gladys.fake.states.length, 0);
 });
 
 test('event stream: states reach Gladys from a live SSE connection', async (t) => {
@@ -399,21 +421,13 @@ test('event stream: states reach Gladys from a live SSE connection', async (t) =
   });
   const { port } = stream.server.address();
 
-  const gladys = createFakeGladys({
-    containers: [
-      {
-        name: GATEWAY_SUB_CONTAINER_NAME,
-        status: 'running',
-        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
-      },
-    ],
-  });
+  const gladys = createFakeGladys({ containers: RUNNING_GATEWAY });
   registerHandlers(gladys, {
     gatewayBaseUrl: `http://127.0.0.1:${port}`,
     discoveryRefreshIntervalMs: 0,
   });
 
-  await gladys.handlers.events['connected']();
+  await gladys.connect();
   while (stream.connections.length === 0) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -424,36 +438,21 @@ test('event stream: states reach Gladys from a live SSE connection', async (t) =
   });
 
   const featureId = deviceExternalId(gladys, 'CP-1') + ':voltage:1:1';
-  while (!gladys.published.some((p) => p.featureExternalId === featureId)) {
+  while (gladys.fake.lastState(featureId) === undefined) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  assert.equal(gladys.published.find((p) => p.featureExternalId === featureId).state, 400);
+  assert.equal(gladys.fake.lastState(featureId), 400);
 
-  gladys.handlers.shutdown('SIGTERM');
+  await gladys.fake.shutdown('SIGTERM');
 });
 
 test("connected event: called with no arguments (the real SDK shape), doesn't throw", async (t) => {
   const gladys = await setup(t);
-  const connectedHandler = gladys.handlers.events['connected'];
-  assert.ok(typeof connectedHandler === 'function', 'a "connected" listener must be registered');
-  await connectedHandler();
-  assert.ok(gladys.connectionStatuses.length > 0);
-  // The "pending" concept is gone - auto-detected charge points show up
-  // directly in Discovery instead (see src/devices/charger.js).
-  assert.doesNotMatch(gladys.connectionStatuses.at(-1).message.en, /awaiting configuration/i);
-});
-
-test('reconcileGateway (via "connected"): connection status shows the ready-to-use OCPP URL, not a generic sentence', async (t) => {
-  const gladys = await setup(t);
-
-  await gladys.handlers.events['connected']();
-
-  const status = gladys.connectionStatuses.at(-1);
-  assert.equal(status.connected, true);
-  // Host port 41234 comes from the fake container fixture in setup().
-  assert.match(status.message.en, /ws:\/\/.*:41234\//);
-  assert.match(status.message.fr, /ws:\/\/.*:41234\//);
-  assert.doesNotMatch(status.message.en, /Relay running on port/);
+  // connect() runs the registered 'connected' listeners, as the real SDK does.
+  await gladys.connect();
+  // The OCPP URL is no longer put in the status message: the manifest's
+  // how_to section embeds it through the {{gladys_host}}/{{port:ocpp}} placeholders.
+  assert.equal(gladys.fake.connectionStatuses.at(-1).connected, true);
 });
 
 test('reconcileGateway (via "connected"): retries the gateway sync and recovers if it comes up in time', async (t) => {
@@ -462,15 +461,7 @@ test('reconcileGateway (via "connected"): retries the gateway sync and recovers 
   t.after(() => server.close());
   const { port } = server.address();
 
-  const gladys = createFakeGladys({
-    containers: [
-      {
-        name: GATEWAY_SUB_CONTAINER_NAME,
-        status: 'running',
-        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
-      },
-    ],
-  });
+  const gladys = createFakeGladys({ containers: RUNNING_GATEWAY });
   registerHandlers(gladys, {
     gatewayBaseUrl: `http://127.0.0.1:${port}`,
     gatewayRetry: { attempts: 5, delayMs: 1 },
@@ -478,10 +469,10 @@ test('reconcileGateway (via "connected"): retries the gateway sync and recovers 
     eventStreamEnabled: false,
   });
 
-  await gladys.handlers.events['connected']();
+  await gladys.connect();
 
   assert.equal(getAttempts(), 3);
-  assert.equal(gladys.connectionStatuses.at(-1).connected, true);
+  assert.equal(gladys.fake.connectionStatuses.at(-1).connected, true);
 });
 
 test('reconcileGateway (via "connected"): reports disconnected once retries are exhausted', async (t) => {
@@ -490,15 +481,7 @@ test('reconcileGateway (via "connected"): reports disconnected once retries are 
   t.after(() => server.close());
   const { port } = server.address();
 
-  const gladys = createFakeGladys({
-    containers: [
-      {
-        name: GATEWAY_SUB_CONTAINER_NAME,
-        status: 'running',
-        ports: [{ container_port: GATEWAY_OCPP_CONTAINER_PORT, host_port: 41234 }],
-      },
-    ],
-  });
+  const gladys = createFakeGladys({ containers: RUNNING_GATEWAY });
   registerHandlers(gladys, {
     gatewayBaseUrl: `http://127.0.0.1:${port}`,
     gatewayRetry: { attempts: 3, delayMs: 1 },
@@ -506,10 +489,10 @@ test('reconcileGateway (via "connected"): reports disconnected once retries are 
     eventStreamEnabled: false,
   });
 
-  await gladys.handlers.events['connected']();
+  await gladys.connect();
 
   assert.equal(getAttempts(), 3);
-  const lastStatus = gladys.connectionStatuses.at(-1);
+  const lastStatus = gladys.fake.connectionStatuses.at(-1);
   assert.equal(lastStatus.connected, false);
   assert.match(lastStatus.message.en, /unable to start the gateway/i);
 });

@@ -46,6 +46,11 @@ import {
   observedConnectorIds,
 } from './src/devices/charger.js';
 import { createStatePublisher } from './src/stateSync.js';
+import {
+  CHARGER_WIDGET_KEY,
+  registerChargerWidget,
+  widgetSignature,
+} from './src/widgets/charger.js';
 import { syncChargerMap, streamGatewayEvents } from './src/gatewayClient.js';
 
 /**
@@ -98,9 +103,11 @@ export function registerHandlers(
   let stopped = false;
   /** identity -> connector ids last reflected in Discovery. */
   const publishedShapes = new Map();
+  /** identity -> what the dashboard widget last showed (see widgetSignature). */
+  const widgetSignatures = new Map();
 
   const statePublisher = createStatePublisher({
-    publishStates: (states) => gladys.publishStates(states),
+    publishStates: (states) => gladys.publishChangedStates(states),
     logger,
   });
 
@@ -178,6 +185,18 @@ export function registerHandlers(
       await publishDevices({ onlyIfChanged: true });
     }
     statePublisher.enqueue(chargerStates(gladys, identity, charger));
+    // A status or a session change is worth an immediate re-pull of the open
+    // widgets; a meter value alone is not (the device-bound tiles follow the
+    // states live, the rest waits for the content TTL).
+    const signature = widgetSignature(charger);
+    if (widgetSignatures.get(identity) !== signature) {
+      widgetSignatures.set(identity, signature);
+      try {
+        gladys.requestWidgetRefresh(CHARGER_WIDGET_KEY);
+      } catch (err) {
+        logger.warn('Unable to request a widget refresh', err);
+      }
+    }
   }
 
   /**
@@ -278,6 +297,9 @@ export function registerHandlers(
     logger.info('onScanRequest -> publishing discovered connector device(s)');
     await publishDevices();
   });
+
+  // --- Dashboard widget: one connector of one charge point ---------------------
+  registerChargerWidget(gladys, fetchState);
 
   // --- Polling: Gladys asks to refresh a device --------------------------------
   gladys.onPoll(async (device) => {

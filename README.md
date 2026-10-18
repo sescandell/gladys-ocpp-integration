@@ -16,7 +16,7 @@ User-facing documentation: [`docs/en.md`](./docs/en.md) /
   the integration never sends a command to a charge point.
 - One Gladys device per charge point, one feature group per physical
   connector.
-- Requires **Gladys `>=4.85.0`** (`gladys-assistant-integration.json`).
+- Requires **Gladys `>=5.1.0`** (`gladys-assistant-integration.json`).
 
 ## Architecture
 
@@ -49,6 +49,8 @@ gateway (`gateway/src/localMode.ts`) instead of being relayed.
 │  ├─ chargers.js                    # charger store: parse/serialize/upsert/remove
 │  ├─ gatewayClient.js               # HTTP client for the gateway sub-container
 │  ├─ stateSync.js                   # outbound state queue (coalescing + rate limiting)
+│  ├─ widgets/
+│  │  └─ charger.js                  #   dashboard widget: one connector of one charge point
 │  └─ devices/
 │     ├─ index.js                    #   device blueprint registry
 │     └─ charger.js                  #   charge point device: features, discovery, state mapping
@@ -67,6 +69,8 @@ gateway (`gateway/src/localMode.ts`) instead of being relayed.
 │  │  └─ stateApi.ts                 #   internal HTTP API (GET /api/state, GET /api/events, POST /api/chargers)
 │  ├─ test/                          #   node:test, own package.json/tsconfig.json
 │  └─ Dockerfile                     #   sub-container image
+├─ dev/                              # disposable Gladys test instance (docker compose) + local dev install script
+├─ simulator/                        # dev-only OCPP charge point simulator with a web UI (never shipped, see its README)
 ├─ test/                             # main container tests (node:test)
 ├─ docs/
 │  ├─ en.md / fr.md                  # user documentation (re-hosted by Gladys)
@@ -86,6 +90,28 @@ gateway (`gateway/src/localMode.ts`) instead of being relayed.
 - Feature `external_id` shape: `<feature key>:<evse id>:<connector id>`
   (e.g. `connector-status:1:1`); `evse id` is currently always `1`.
 - Each device carries its configured origin cloud URL as a device `param`.
+
+## Dashboard widget
+
+One manifest widget, `charger`, built by `src/widgets/charger.js` from
+`GET /api/state` on each pull (`ttl_seconds: 60`). Settings: `device`,
+`connector`, `tiles` (multi_select), `chart`, `chart_interval`, `kwh_price`,
+`details` — option values and defaults are mirrored by `TILES` /
+`CHART_MODES` / `CHART_INTERVALS` / `DEFAULT_SETTINGS` (kept in sync by
+`test/manifest.test.js`; never rename a value, saved widgets store it).
+
+- Power / total energy tiles and the power curve are bound to
+  `power:1:<c>` / `energy:1:<c>` and follow published states live.
+- Cost: `energy:1:<c>_cost`, a feature the core derives from our energy index
+  and prices with the user's energy contracts — shown only once it has a
+  `last_value` (checked through `getDevices()`), else session energy ×
+  `kwh_price`, else no tile.
+- The core keeps 8 components: heading, then chart and status when enabled,
+  then as many tiles as fit, then the caption if room is left.
+- `index.js` calls `requestWidgetRefresh` when `widgetSignature()` changes
+  (status, error, transaction, offered limit, history), not on meter values.
+- Every produced content is checked against the SDK's `validateWidgetContent`
+  in `test/widgets/charger.test.js`.
 
 ## Configuration
 
@@ -125,6 +151,11 @@ GATEWAY_PORT=9321 UI_PORT=9080 npm start
 Configure a charger: `POST http://localhost:9080/api/chargers` with body
 `{"chargers": {"<identity>": "<origin cloud url>"}}`.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the quality checks, the charge point simulator and the
+throwaway Gladys test instance.
+
 ## Quality checks
 
 ```bash
@@ -156,10 +187,9 @@ container images (main + `gateway/`) in lockstep.
 
 ## Requirements
 
-- Node.js `>=20` for the main container.
-- Node.js 24 for the `gateway/` sub-project (TypeScript run natively, no
-  build step).
-- `@gladysassistant/integration-sdk` `^0.11.0`.
+- Node.js `>=26` for the main container, the `gateway/` sub-project (TypeScript run natively,
+  no build step) and the `simulator/` (both Docker images ship `node:26-alpine`).
+- `@gladysassistant/integration-sdk` `^0.15.0`.
 
 ## License
 

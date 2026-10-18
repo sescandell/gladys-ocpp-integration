@@ -1,0 +1,19 @@
+{
+  "name": "gladys-ocpp-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development-only OCPP 1.6 charge point simulator with a web UI, to try the Gladys OCPP integration without a real charge point. Not part of the integration image.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "dependencies": {
+    "ocpp-rpc": "^2.2.1"
+  },
+  "license": "Apache-2.0"
+}
