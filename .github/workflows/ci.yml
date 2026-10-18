@@ -13,7 +13,7 @@
 #   2. ESLint    -> catch real mistakes (undefined vars, dead code, ...);
 #   3. Tests     -> `node --test`, the built-in runner (no extra dependency).
 #
-# Runs on Node 24, the version both Docker images ship with (see the
+# Runs on Node 26, the version both Docker images ship with (see the
 # Dockerfiles), so the checks exercise the exact runtime the integration
 # runs on.
 # -----------------------------------------------------------------------------
@@ -36,7 +36,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
 
       - name: Install dependencies
@@ -64,7 +64,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: gateway/package-lock.json
 

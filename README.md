@@ -187,10 +187,9 @@ container images (main + `gateway/`) in lockstep.
 
 ## Requirements
 
-- Node.js `>=20` for the main container.
-- Node.js 24 for the `gateway/` sub-project (TypeScript run natively, no
-  build step).
-- `@gladysassistant/integration-sdk` `^0.11.0`.
+- Node.js `>=26` for the main container, the `gateway/` sub-project (TypeScript run natively,
+  no build step) and the `simulator/` (both Docker images ship `node:26-alpine`).
+- `@gladysassistant/integration-sdk` `^0.15.0`.
 
 ## License
 

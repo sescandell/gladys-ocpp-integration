@@ -5,7 +5,8 @@ publishing anything**.
 
 ## Prerequisites
 
-- Node.js ≥ 20 (the gateway runs TypeScript directly: Node ≥ 24 recommended, like the images).
+- Node.js ≥ 26, for all three projects (root, `gateway/`, `simulator/`): it is the version both
+  Docker images and the CI ship, and the gateway runs TypeScript directly.
 - Docker (Docker Desktop is fine) for the Gladys test instance.
 - PowerShell 7+ to run `dev/install-dev.ps1` (Windows, macOS or Linux).
 
