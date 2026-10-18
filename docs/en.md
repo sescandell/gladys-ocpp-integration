@@ -132,7 +132,7 @@ widget settings:
 | **Chart**                     | Automatic                                     | _Automatic_: power curve while charging, energy of the recent sessions otherwise. Or always one of them, or none.                                               |
 | **Power curve period**        | Last 12 hours                                 | From the last hour to the last week.                                                                                                                            |
 | **Price per kWh (€)**         | empty                                         | See "Cost" below.                                                                                                                                               |
-| **Show charge point details** | yes                                           | Connector status, limit offered by the charge point, error code if any, last message to the relay, model and firmware.                                          |
+| **Show charge point details** | yes                                           | Connector status, limit offered by the charge point, error code if any, last message to the relay, vendor and model.                                            |
 
 A tile with nothing to show yet (no session, for instance) is hidden. A widget
 has limited room: with both the chart **and** the details, only the first 5

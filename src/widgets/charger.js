@@ -484,9 +484,6 @@ function statusItems({
   if (hardware) {
     items.push({ label: t({ en: 'Charge point', fr: 'Borne' }), value: hardware, icon: 'cpu' });
   }
-  if (chargeState.firmwareVersion) {
-    items.push({ label: 'Firmware', value: chargeState.firmwareVersion, icon: 'package' });
-  }
   return items;
 }
 

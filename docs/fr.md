@@ -140,7 +140,7 @@ les réglages du widget :
 | **Graphique**                        | Automatique                                   | _Automatique_ : courbe de puissance pendant une charge, énergie des sessions récentes sinon. Ou toujours l'un des deux, ou aucun.                                                    |
 | **Période de la courbe**             | 12 dernières heures                           | De la dernière heure à la dernière semaine.                                                                                                                                          |
 | **Prix du kWh (€)**                  | vide                                          | Voir « Coût » ci-dessous.                                                                                                                                                            |
-| **Afficher les détails de la borne** | oui                                           | Statut du connecteur, limite offerte par la borne, code d'erreur s'il y en a un, dernier échange avec le relais, modèle et firmware.                                                 |
+| **Afficher les détails de la borne** | oui                                           | Statut du connecteur, limite offerte par la borne, code d'erreur s'il y en a un, dernier échange avec le relais, fabricant et modèle.                                                |
 
 Une tuile qui n'a encore rien à afficher (pas de session, par exemple) est
 masquée. Un widget a une place limitée : avec le graphique **et** les détails,
