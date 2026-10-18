@@ -60,6 +60,8 @@ export interface ChargerStateJSON {
   firmwareVersion: string | null;
   lastSeenAt: string | null;
   connectors: Record<number, ConnectorState>;
+  /** Transactions in progress (one per connector in practice). */
+  transactions: TransactionRecord[];
   history: TransactionRecord[];
 }
 
@@ -157,6 +159,7 @@ export class ChargerState {
       firmwareVersion: this.firmwareVersion,
       lastSeenAt: this.lastSeenAt,
       connectors: Object.fromEntries(this.connectors) as Record<number, ConnectorState>,
+      transactions: [...this.transactions.values()],
       history: this.history,
     };
   }

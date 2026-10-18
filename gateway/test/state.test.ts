@@ -74,6 +74,20 @@ test('StateStore.toJSON serializes every charger, connectors keyed by id', () =>
   assert.equal(json['CP-1'].connectors[1].status, 'Charging');
 });
 
+test('toJSON exposes the transactions in progress, then moves them to history', () => {
+  const state = new ChargerState('CP-1');
+  state.startTransaction(1, 42, 'tag-1', 1000, '2026-08-01T10:00:00.000Z');
+  let json = state.toJSON();
+  assert.equal(json.transactions.length, 1);
+  assert.equal(json.transactions[0].meterStart, 1000);
+  assert.equal(json.transactions[0].startedAt, '2026-08-01T10:00:00.000Z');
+
+  state.stopTransaction(42, 1500, '2026-08-01T11:00:00.000Z', null);
+  json = state.toJSON();
+  assert.deepEqual(json.transactions, []);
+  assert.equal(json.history[0].transactionId, 42);
+});
+
 test('StateStore.reset() replaces a charger with a fresh, empty state', () => {
   const store = new StateStore();
   const before = store.get('CP-1');

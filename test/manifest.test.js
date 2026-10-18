@@ -59,7 +59,67 @@ test('gladys_version matches what the manifest actually needs', () => {
   // in the how_to section below, and \n-as-line-break rendering in
   // config_schema/action descriptions (core PR #2788, `white-space:
   // pre-wrap` in ConfigSchemaForm.jsx/ActionsCard.jsx).
-  assert.equal(manifest.gladys_version, '>=4.85.0');
+  // >=5.1.0: dashboard widgets declared by external integrations (core PR
+  // #3109) - the `widgets` field below rejects the manifest on older cores.
+  assert.equal(manifest.gladys_version, '>=5.1.0');
+});
+
+test('charger widget: one connector of one of our charge points', () => {
+  assert.deepEqual(
+    manifest.widgets?.map((w) => w.key),
+    ['charger'],
+  );
+  const widget = manifest.widgets[0];
+  // Core bounds (code-enforced, not in the JSON schema): label 3-30 chars,
+  // description <= 100 chars, per language.
+  for (const [lang, text] of Object.entries(widget.label)) {
+    assert.ok(text.length >= 3 && text.length <= 30, `widget label.${lang}: ${text.length}`);
+  }
+  for (const [lang, text] of Object.entries(widget.description ?? {})) {
+    assert.ok(text.length <= 100, `widget description.${lang}: ${text.length}`);
+  }
+
+  const device = widget.settings.find((f) => f.key === 'device');
+  assert.equal(device.type, 'select');
+  assert.equal(device.source, 'devices');
+  assert.equal(device.required, true);
+
+  // A default, so a single-connector charge point (the vast majority) needs
+  // no extra setting.
+  const connector = widget.settings.find((f) => f.key === 'connector');
+  assert.equal(connector.type, 'number');
+  assert.equal(connector.default, 1);
+});
+
+test('charger widget settings: options and defaults match the code', async () => {
+  const { TILES, CHART_MODES, CHART_INTERVALS, DEFAULT_SETTINGS } =
+    await import('../src/widgets/charger.js');
+  const settings = new Map(manifest.widgets[0].settings.map((f) => [f.key, f]));
+  const optionValues = (key) => settings.get(key).options.map((o) => o.value);
+
+  // Saved widgets store these values: a rename on either side silently
+  // breaks every widget already on a dashboard.
+  assert.deepEqual(optionValues('tiles'), Object.values(TILES));
+  assert.deepEqual(optionValues('chart'), Object.values(CHART_MODES));
+  assert.deepEqual(optionValues('chart_interval'), CHART_INTERVALS);
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    assert.deepEqual(settings.get(key).default, value, `settings.${key}.default`);
+  }
+  // No default price: without one, the widget never shows a made-up cost.
+  assert.equal(settings.get('kwh_price').type, 'number');
+  assert.equal(settings.get('kwh_price').default, undefined);
+  assert.ok(settings.size <= 10, 'the core accepts at most 10 widget settings');
+});
+
+test('every declared widget has a handler registered by index.js', async () => {
+  const { createFakeGladys } = await import('./helpers/fakeGladys.js');
+  const { registerHandlers } = await import('../index.js');
+  const gladys = createFakeGladys();
+  registerHandlers(gladys, { discoveryRefreshIntervalMs: 0, eventStreamEnabled: false });
+  assert.deepEqual(
+    Object.keys(gladys.handlers.widgets).sort(),
+    manifest.widgets.map((w) => w.key).sort(),
+  );
 });
 
 test('V1 is read-only: the only action attaches an origin cloud, it never controls a device', () => {
@@ -192,4 +252,15 @@ test('no known hardware brand reference anywhere in the manifest', () => {
   // Regression trip-wire: this integration must stay generic, never tied to
   // a specific charge point vendor.
   assert.doesNotMatch(manifestRaw, /autel/i);
+});
+
+test('charger widget: the number bounds match the ones enforced by the code', async () => {
+  const { normalizeWidgetSettings } = await import('../src/widgets/charger.js');
+  const settings = new Map(manifest.widgets[0].settings.map((f) => [f.key, f]));
+  const connector = settings.get('connector');
+  assert.equal(normalizeWidgetSettings({ connector: connector.max }).connector, connector.max);
+  assert.equal(normalizeWidgetSettings({ connector: connector.max + 1 }).connector, 1);
+  const price = settings.get('kwh_price');
+  assert.equal(normalizeWidgetSettings({ kwh_price: price.max }).kwhPrice, price.max);
+  assert.equal(normalizeWidgetSettings({ kwh_price: price.max + 1 }).kwhPrice, null);
 });

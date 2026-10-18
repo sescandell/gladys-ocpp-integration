@@ -11,8 +11,11 @@
 //   - getContainers / startContainer -> in-memory sub-container lifecycle,
 //     seeded via `containers` option, mutated the same way the real supervisor
 //     would (see gatewayClient.js's ensureGatewayRunning)
+//   - getDevices                     -> created devices, seeded via `devices`
 //   - getConfig / setConfig          -> in-memory config, seeded via `config`
-//   - onScanRequest / onPoll / onConfigUpdated / onAction / on / handleShutdown
+//   - requestWidgetRefresh           -> record calls so tests can assert them
+//   - onScanRequest / onPoll / onConfigUpdated / onAction / onWidgetGet / on /
+//     handleShutdown
 //     -> registers the callback under the SAME invocation shape the real SDK
 //     uses (verified against integration-sdk's index.d.ts), so calling a
 //     captured handler directly in a test exercises the exact call shape
@@ -35,6 +38,7 @@ export function createFakeGladys(options = {}) {
   const startContainerCalls = [];
   const restartContainerCalls = [];
   const setConfigCalls = [];
+  const widgetRefreshes = [];
   let containers = options.containers ?? [];
   let config = options.config ?? {};
 
@@ -43,6 +47,7 @@ export function createFakeGladys(options = {}) {
     poll: null,
     configUpdated: null,
     actions: {},
+    widgets: {},
     events: {},
     shutdown: null,
   };
@@ -57,6 +62,7 @@ export function createFakeGladys(options = {}) {
     startContainerCalls,
     restartContainerCalls,
     setConfigCalls,
+    widgetRefreshes,
     handlers,
 
     externalIds(type, platformId) {
@@ -126,6 +132,10 @@ export function createFakeGladys(options = {}) {
       return { success: true };
     },
 
+    async getDevices() {
+      return options.devices ?? [];
+    },
+
     async getConfig() {
       return config;
     },
@@ -149,6 +159,14 @@ export function createFakeGladys(options = {}) {
 
     onAction(key, callback) {
       handlers.actions[key] = callback;
+    },
+
+    onWidgetGet(key, callback) {
+      handlers.widgets[key] = callback;
+    },
+
+    requestWidgetRefresh(key) {
+      widgetRefreshes.push(key);
     },
 
     on(event, listener) {

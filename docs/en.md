@@ -31,9 +31,9 @@ on the wire, in either mode.
 
 ## Prerequisites
 
-**Gladys 4.85.0 or later.** The charge point state is published using
-Gladys's charging-station device features, which older versions don't know
-about (they would refuse to create the device).
+**Gladys 5.1.0 or later.** The charge point state is published using
+Gladys's charging-station device features, and the dashboard widget relies on
+integration widgets — older versions don't know about either.
 
 Each charge point's vendor app or portal must let you view and change the
 OCPP server URL it connects to. Not every vendor exposes this — if yours
@@ -114,6 +114,45 @@ Values update **as they happen**, within a few seconds: the relay tells the
 integration about every change it observes rather than being asked at
 intervals. A charge point that connects for the first time also appears in
 Discovery on its own, without waiting for a refresh.
+
+## Dashboard widget
+
+Add a **Charge point** box to a dashboard and pick the charge point. A widget
+shows **one connector** (connector 1 by default): for a charge point with
+several connectors, add one widget per connector.
+
+At the top, the widget always says what the connector is doing right now, in
+plain words, with the session duration while charging. The rest is up to the
+widget settings:
+
+| Setting                       | Default                                       | Effect                                                                                                                                                          |
+| ----------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connector**                 | 1                                             | The connector shown.                                                                                                                                            |
+| **Tiles**                     | Power, Session energy, Session duration, Cost | Any of: live power, energy and duration of the current session (or of the last one when idle), cost, max power offered by the charge point, meter total energy. |
+| **Chart**                     | Automatic                                     | _Automatic_: power curve while charging, energy of the recent sessions otherwise. Or always one of them, or none.                                               |
+| **Power curve period**        | Last 12 hours                                 | From the last hour to the last week.                                                                                                                            |
+| **Price per kWh (€)**         | empty                                         | See "Cost" below.                                                                                                                                               |
+| **Show charge point details** | yes                                           | Connector status, limit offered by the charge point, error code if any, last message to the relay, model and firmware.                                          |
+
+A tile with nothing to show yet (no session, for instance) is hidden. A widget
+has limited room: with both the chart **and** the details, only the first 5
+selected tiles are shown.
+
+### Cost
+
+- **If Gladys's Energy screen is set up** (charge point attached to your
+  electricity meter, contract filled in), the tile shows the **cost of the
+  last 30 minutes**, computed by Gladys with your contract (peak/off-peak
+  hours, Tempo…). Gladys computes these costs in the background: the tile
+  appears after the first run and may lag behind by up to half an hour. If the
+  charge point was created before this version, click **Update** on its
+  device card first.
+- **Otherwise, if you entered a price per kWh**, the tile shows the **session
+  cost** (session energy × that fixed price, no peak/off-peak hours).
+- **Otherwise**, no cost tile.
+
+Recent sessions are kept by the relay in memory: the list starts over when the
+integration restarts.
 
 ## Multiple connectors
 

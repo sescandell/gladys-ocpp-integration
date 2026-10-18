@@ -8,11 +8,9 @@
   },
   "version": "1.0.0",
   "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:1.0.0",
-  "gladys_version": ">=4.85.0",
+  "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
-  "transports": [
-    "local"
-  ],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "how_to",
@@ -80,6 +78,208 @@
       ],
       "memory_mb": 256,
       "cpu": 0.5
+    }
+  ],
+  "widgets": [
+    {
+      "key": "charger",
+      "label": {
+        "en": "Charge point",
+        "fr": "Borne de recharge"
+      },
+      "description": {
+        "en": "One connector at a glance: live power, current session, cost and recent sessions.",
+        "fr": "Un connecteur en un coup d'œil : puissance, session en cours, coût et sessions récentes."
+      },
+      "icon": "battery-charging",
+      "settings": [
+        {
+          "key": "device",
+          "type": "select",
+          "source": "devices",
+          "label": {
+            "en": "Charge point",
+            "fr": "Borne"
+          },
+          "required": true
+        },
+        {
+          "key": "connector",
+          "type": "number",
+          "label": {
+            "en": "Connector",
+            "fr": "Connecteur"
+          },
+          "default": 1,
+          "min": 1,
+          "max": 10
+        },
+        {
+          "key": "tiles",
+          "type": "multi_select",
+          "label": {
+            "en": "Tiles",
+            "fr": "Tuiles"
+          },
+          "description": {
+            "en": "Up to 6 (5 with both the chart and the details). A tile with nothing to show yet is hidden.",
+            "fr": "Jusqu'à 6 (5 avec le graphique et les détails). Une tuile sans rien à afficher est masquée."
+          },
+          "options": [
+            {
+              "value": "power",
+              "label": {
+                "en": "Power",
+                "fr": "Puissance"
+              }
+            },
+            {
+              "value": "session_energy",
+              "label": {
+                "en": "Session energy",
+                "fr": "Énergie de la session"
+              }
+            },
+            {
+              "value": "duration",
+              "label": {
+                "en": "Session duration",
+                "fr": "Durée de la session"
+              }
+            },
+            {
+              "value": "cost",
+              "label": {
+                "en": "Cost",
+                "fr": "Coût"
+              }
+            },
+            {
+              "value": "offered_power",
+              "label": {
+                "en": "Max power offered",
+                "fr": "Puissance max offerte"
+              }
+            },
+            {
+              "value": "total_energy",
+              "label": {
+                "en": "Total energy (meter)",
+                "fr": "Énergie totale (compteur)"
+              }
+            }
+          ],
+          "default": ["power", "session_energy", "duration", "cost"]
+        },
+        {
+          "key": "chart",
+          "type": "select",
+          "label": {
+            "en": "Chart",
+            "fr": "Graphique"
+          },
+          "options": [
+            {
+              "value": "auto",
+              "label": {
+                "en": "Automatic (power while charging, sessions otherwise)",
+                "fr": "Automatique (puissance en charge, sessions sinon)"
+              }
+            },
+            {
+              "value": "power",
+              "label": {
+                "en": "Power curve",
+                "fr": "Courbe de puissance"
+              }
+            },
+            {
+              "value": "sessions",
+              "label": {
+                "en": "Recent sessions",
+                "fr": "Sessions récentes"
+              }
+            },
+            {
+              "value": "none",
+              "label": {
+                "en": "None",
+                "fr": "Aucun"
+              }
+            }
+          ],
+          "default": "auto"
+        },
+        {
+          "key": "chart_interval",
+          "type": "select",
+          "label": {
+            "en": "Power curve period",
+            "fr": "Période de la courbe"
+          },
+          "options": [
+            {
+              "value": "last-hour",
+              "label": {
+                "en": "Last hour",
+                "fr": "Dernière heure"
+              }
+            },
+            {
+              "value": "last-twelve-hours",
+              "label": {
+                "en": "Last 12 hours",
+                "fr": "12 dernières heures"
+              }
+            },
+            {
+              "value": "last-day",
+              "label": {
+                "en": "Last 24 hours",
+                "fr": "24 dernières heures"
+              }
+            },
+            {
+              "value": "last-three-days",
+              "label": {
+                "en": "Last 3 days",
+                "fr": "3 derniers jours"
+              }
+            },
+            {
+              "value": "last-week",
+              "label": {
+                "en": "Last week",
+                "fr": "Dernière semaine"
+              }
+            }
+          ],
+          "default": "last-twelve-hours"
+        },
+        {
+          "key": "kwh_price",
+          "type": "number",
+          "label": {
+            "en": "Price per kWh (€), optional",
+            "fr": "Prix du kWh (€), facultatif"
+          },
+          "description": {
+            "en": "Only used when Gladys has no cost of its own for this charge point (Energy screen not set up).",
+            "fr": "Utilisé seulement si Gladys ne calcule pas de coût pour cette borne (écran Énergie non configuré)."
+          },
+          "min": 0,
+          "max": 10
+        },
+        {
+          "key": "details",
+          "type": "boolean",
+          "label": {
+            "en": "Show charge point details",
+            "fr": "Afficher les détails de la borne"
+          },
+          "default": true
+        }
+      ]
     }
   ]
 }

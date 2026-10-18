@@ -337,6 +337,24 @@ test('gateway change: publishes the charge point states without calling back to 
   assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':power:1:1'), 7.2);
 });
 
+test('gateway change: the widget is nudged on a status change, not on a meter value', async (t) => {
+  const gladys = await setup(t);
+  const change = (connector) =>
+    gladys.handleGatewayChange({
+      identity: 'CP-1',
+      charger: { identity: 'CP-1', connectors: { 1: connector } },
+    });
+
+  await change({ status: 'Available' });
+  assert.deepEqual(gladys.widgetRefreshes, ['charger'], 'first sight of a charge point');
+
+  await change({ status: 'Available', powerActiveImportW: 0, voltageV: 231 });
+  assert.equal(gladys.widgetRefreshes.length, 1, 'a meter value alone is not worth a re-pull');
+
+  await change({ status: 'Charging', transactionId: 3 });
+  assert.equal(gladys.widgetRefreshes.length, 2);
+});
+
 test('gateway change: a new charge point refreshes Discovery, a known one does not', async (t) => {
   let chargers = {};
   const { server } = startFakeEventStreamServer(() => chargers);
@@ -437,23 +455,9 @@ test("connected event: called with no arguments (the real SDK shape), doesn't th
   const connectedHandler = gladys.handlers.events['connected'];
   assert.ok(typeof connectedHandler === 'function', 'a "connected" listener must be registered');
   await connectedHandler();
-  assert.ok(gladys.connectionStatuses.length > 0);
-  // The "pending" concept is gone - auto-detected charge points show up
-  // directly in Discovery instead (see src/devices/charger.js).
-  assert.doesNotMatch(gladys.connectionStatuses.at(-1).message.en, /awaiting configuration/i);
-});
-
-test('reconcileGateway (via "connected"): connection status shows the ready-to-use OCPP URL, not a generic sentence', async (t) => {
-  const gladys = await setup(t);
-
-  await gladys.handlers.events['connected']();
-
-  const status = gladys.connectionStatuses.at(-1);
-  assert.equal(status.connected, true);
-  // Host port 41234 comes from the fake container fixture in setup().
-  assert.match(status.message.en, /ws:\/\/.*:41234\//);
-  assert.match(status.message.fr, /ws:\/\/.*:41234\//);
-  assert.doesNotMatch(status.message.en, /Relay running on port/);
+  // The OCPP URL is no longer put in the status message: the manifest's
+  // how_to section embeds it through the {{gladys_host}}/{{port:ocpp}} placeholders.
+  assert.equal(gladys.connectionStatuses.at(-1).connected, true);
 });
 
 test('reconcileGateway (via "connected"): retries the gateway sync and recovers if it comes up in time', async (t) => {
