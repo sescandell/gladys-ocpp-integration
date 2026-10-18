@@ -107,7 +107,7 @@ export function registerHandlers(
   const widgetSignatures = new Map();
 
   const statePublisher = createStatePublisher({
-    publishStates: (states) => gladys.publishStates(states),
+    publishStates: (states) => gladys.publishChangedStates(states),
     logger,
   });
 

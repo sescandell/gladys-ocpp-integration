@@ -321,6 +321,34 @@ test('gateway change: publishes the charge point states without calling back to 
   assert.equal(byFeature.get(deviceExternalId(gladys, 'CP-1') + ':power:1:1'), 7.2);
 });
 
+test('gateway change: a value Gladys already has is not published again', async (t) => {
+  const gladys = await setup(t);
+  const change = (voltageV) =>
+    gladys.handleGatewayChange({
+      identity: 'CP-1',
+      charger: { identity: 'CP-1', connectors: { 1: { status: 'Available', voltageV } } },
+    });
+  const voltage = deviceExternalId(gladys, 'CP-1') + ':voltage:1:1';
+  const sent = () => gladys.fake.states.filter((s) => s.device_feature_external_id === voltage);
+
+  await change(230);
+  await new Promise((resolve) => setImmediate(resolve));
+  await change(230);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent().length, 1);
+
+  await change(231);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent().length, 2);
+
+  // Delete then recreate the device in Gladys: it has no value any more, so
+  // the same reading must go out again.
+  await gladys.fake.deviceDeleted({ external_id: deviceExternalId(gladys, 'CP-1') });
+  await change(231);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent().length, 3);
+});
+
 test('gateway change: the widget is nudged on a status change, not on a meter value', async (t) => {
   const gladys = await setup(t);
   const change = (connector) =>
