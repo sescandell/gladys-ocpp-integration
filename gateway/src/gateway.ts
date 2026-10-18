@@ -65,8 +65,9 @@ import { RPCServer, RPCClient } from 'ocpp-rpc';
 import type { IHandlersOption } from 'ocpp-rpc';
 import { StateStore } from './state.ts';
 import { ChargerRegistry } from './chargerRegistry.ts';
-import { observe } from './observe.ts';
+import { observe, observeOutgoing } from './observe.ts';
 import { createStateApiServer, type LocalClient } from './stateApi.ts';
+import { createChargerCommands, type CallableClient } from './chargerCommands.ts';
 import { createChangeFeed } from './changeFeed.ts';
 import { formatExchangeLog } from './exchangeLog.ts';
 import { buildPrimaryConnectionOptions } from './originConnection.ts';
@@ -74,19 +75,36 @@ import { synthesizeLocalResponse } from './localMode.ts';
 
 export interface GatewayOptions {
   protocols?: string[];
+  /** Wait between a charge point's boot and the vendor probes (tests shorten it). */
+  probeDelayMs?: number;
 }
 
 const DEFAULT_PROTOCOLS = ['ocpp1.6'];
+/**
+ * The boot answer must reach the charge point before the gateway starts
+ * talking to it: a CALL sent while the BootNotification is still unanswered
+ * can be ignored by a charge point that is not "accepted" yet.
+ */
+const DEFAULT_PROBE_DELAY_MS = 1_000;
 
 export const store = new StateStore();
 export const registry = new ChargerRegistry();
 /** Currently-connected charge points in LOCAL MODE only - see header comment. */
 export const localClients: Map<string, LocalClient> = new Map();
+/** Every connected charge point, in either mode: what the gateway's own commands go through. */
+export const liveClients: Map<string, CallableClient> = new Map();
 /** Pushes observed changes to the main container - see changeFeed.ts. */
 export const changeFeed = createChangeFeed(store);
+export const commands = createChargerCommands(store, liveClients, changeFeed);
 
 export function createGatewayServer(options: GatewayOptions = {}) {
   const protocols = options.protocols ?? DEFAULT_PROTOCOLS;
+  const probeDelayMs = options.probeDelayMs ?? DEFAULT_PROBE_DELAY_MS;
+
+  /** Lets the vendor modules find out what a freshly booted charge point supports. */
+  const scheduleProbe = (identity: string) => {
+    setTimeout(() => void commands.probe(identity), probeDelayMs).unref?.();
+  };
 
   const server = new RPCServer({
     protocols,
@@ -104,6 +122,14 @@ export function createGatewayServer(options: GatewayOptions = {}) {
     // in Discovery within seconds rather than at the next refresh.
     changeFeed.notify(identity);
 
+    liveClients.set(identity, client);
+    client.on('close', () => {
+      // Same fast-reconnect guard as `localClients` below.
+      if (liveClients.get(identity) === client) {
+        liveClients.delete(identity);
+      }
+    });
+
     const originCloudUrl = registry.resolve(identity);
     if (originCloudUrl === undefined) {
       // LOCAL MODE: no origin cloud configured yet - see header comment.
@@ -118,6 +144,7 @@ export function createGatewayServer(options: GatewayOptions = {}) {
         const response = synthesizeLocalResponse(method, params);
         observe(state, method, params, response);
         changeFeed.notify(identity);
+        if (method === 'BootNotification') scheduleProbe(identity);
         console.log(
           formatExchangeLog('EV Charger -> Local (unconfigured)', identity, method, params, {
             ok: true,
@@ -182,6 +209,7 @@ export function createGatewayServer(options: GatewayOptions = {}) {
         const response = await primaryClient.call(method, params, { signal });
         observe(state, method, params, response);
         changeFeed.notify(identity);
+        if (method === 'BootNotification') scheduleProbe(identity);
         console.log(
           formatExchangeLog('EV Charger -> Primary', identity, method, params, {
             ok: true,
@@ -209,6 +237,10 @@ export function createGatewayServer(options: GatewayOptions = {}) {
       const params = args.params;
       try {
         const response = await client.call(method, params, { signal: args.signal as AbortSignal });
+        // Some vendor state is only ever visible in what the origin cloud sends
+        // to the charge point (see vendors/): hand it over.
+        observeOutgoing(state, method, params, response);
+        changeFeed.notify(identity);
         console.log(
           formatExchangeLog('Primary -> EV Charger', identity, method, params, {
             ok: true,
@@ -248,7 +280,7 @@ async function main() {
   console.log(`gateway listening on ws://0.0.0.0:${port}/`);
 
   const stateApiPort = Number.parseInt(process.env.UI_PORT ?? '9080', 10);
-  const stateApiServer = createStateApiServer(store, registry, localClients, changeFeed);
+  const stateApiServer = createStateApiServer(store, registry, localClients, changeFeed, commands);
   await new Promise<void>((resolve) => stateApiServer.listen(stateApiPort, resolve));
   console.log(
     `gateway internal state API listening on http://0.0.0.0:${stateApiPort}/ (private network only)`,

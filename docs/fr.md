@@ -1,10 +1,11 @@
 # Borne de recharge
 
-**Supervision en lecture seule.** Cette intégration observe un
+**Supervision.** Cette intégration observe un
 nombre quelconque de bornes de recharge OCPP 1.6 et affiche leur état dans
 Gladys (statut du connecteur, état de charge, puissance, courant, tension,
-énergie totale) — il n'est pas encore possible de démarrer, arrêter ou
-limiter une charge depuis Gladys.
+énergie totale). Il n'est pas encore possible de démarrer, arrêter ou
+limiter une charge depuis Gladys ; la seule commande est le verrouillage
+permanent du câble des bornes Autel (voir « Verrouillage du câble » plus bas).
 
 ## Fonctionnement
 
@@ -123,6 +124,31 @@ interrogé à intervalles réguliers. Une borne qui se connecte pour la premièr
 fois apparaît elle aussi toute seule dans Découverte, sans attendre un
 rafraîchissement.
 
+## Verrouillage du câble (Autel)
+
+Les bornes Autel peuvent garder leur câble **verrouillé en permanence** dans le
+connecteur (fonction du constructeur, hors OCPP standard). Sur ces bornes,
+chaque connecteur reçoit un interrupteur **Verrouillage du câble**, utilisable
+dans Gladys (tableau de bord, scènes…) et dans le widget. Il n'apparaît qu'une
+fois que la borne a confirmé disposer de la fonction : peu après sa connexion,
+le relais lui demande sa liste de fonctions prises en charge (une requête OCPP
+standard, le cloud du constructeur fait la même).
+
+- La borne **ne signale jamais** cet état d'elle-même. L'intégration l'apprend
+  en voyant passer les commandes de verrouillage et de déverrouillage — qu'elles
+  viennent de Gladys ou de l'application du constructeur (celles de
+  l'application transitent par le relais une fois la borne associée à son cloud
+  d'origine, voir Installation). L'interrupteur n'affiche donc **aucune valeur**
+  avant la première commande, et le widget propose « Verrouiller » et
+  « Déverrouiller » en attendant.
+- Une commande faite avec l'application du constructeur **sans** passer par le
+  relais (Bluetooth, Wi-Fi direct) est invisible : l'interrupteur garde alors la
+  dernière commande qu'il connaissait.
+- Le relais oublie cet état quand il redémarre : plus de valeur jusqu'à la
+  commande suivante.
+- Si la borne a été créée avant cette version, cliquez sur **Mettre à jour**
+  sur sa fiche appareil pour faire apparaître l'interrupteur.
+
 ## Widget de tableau de bord
 
 Ajoutez une boîte **Borne de recharge** à un tableau de bord et choisissez la
@@ -133,14 +159,15 @@ En haut, le widget dit toujours ce que fait le connecteur en ce moment, en
 clair, avec la durée de la session pendant une charge. Le reste se règle dans
 les réglages du widget :
 
-| Réglage                              | Par défaut                                    | Effet                                                                                                                                                                                |
-| ------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Connecteur**                       | 1                                             | Le connecteur affiché.                                                                                                                                                               |
-| **Tuiles**                           | Puissance, Énergie, Durée de la session, Coût | Au choix parmi : puissance en direct, énergie et durée de la session en cours (ou de la dernière hors charge), coût, puissance max offerte par la borne, énergie totale du compteur. |
-| **Graphique**                        | Automatique                                   | _Automatique_ : courbe de puissance pendant une charge, énergie des sessions récentes sinon. Ou toujours l'un des deux, ou aucun.                                                    |
-| **Période de la courbe**             | 12 dernières heures                           | De la dernière heure à la dernière semaine.                                                                                                                                          |
-| **Prix du kWh (€)**                  | vide                                          | Voir « Coût » ci-dessous.                                                                                                                                                            |
-| **Afficher les détails de la borne** | oui                                           | Statut du connecteur, limite offerte par la borne, code d'erreur s'il y en a un, dernier échange avec le relais, fabricant et modèle.                                                |
+| Réglage                                | Par défaut                                    | Effet                                                                                                                                                                                 |
+| -------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connecteur**                         | 1                                             | Le connecteur affiché.                                                                                                                                                                |
+| **Tuiles**                             | Puissance, Énergie, Durée de la session, Coût | Au choix parmi : puissance en direct, énergie et durée de la session en cours (ou de la dernière hors charge), coût, puissance max offerte par la borne, énergie totale du compteur.  |
+| **Graphique**                          | Automatique                                   | _Automatique_ : courbe de puissance pendant une charge, énergie des sessions récentes sinon. Ou toujours l'un des deux, ou aucun.                                                     |
+| **Période de la courbe**               | 12 dernières heures                           | De la dernière heure à la dernière semaine.                                                                                                                                           |
+| **Prix du kWh (€)**                    | vide                                          | Voir « Coût » ci-dessous.                                                                                                                                                             |
+| **Afficher les détails de la borne**   | oui                                           | Statut du connecteur, limite offerte par la borne, code d'erreur s'il y en a un, dernier échange avec le relais, fabricant et modèle.                                                 |
+| **Afficher les commandes de la borne** | oui                                           | Des boutons pour ce qu'on peut demander à la borne, s'il y en a (voir « Verrouillage du câble ») : le bouton fait l'inverse de l'état connu, les deux boutons tant qu'il est inconnu. |
 
 Une tuile qui n'a encore rien à afficher (pas de session, par exemple) est
 masquée. Un widget a une place limitée : avec le graphique **et** les détails,
@@ -208,8 +235,9 @@ via le relais. Gardez cela à l'esprit sur un réseau partagé ou non fiable.
   connexion) — si cela arrive, les données de cette session peuvent ne pas
   remonter correctement au cloud d'origine ; la session suivante n'est pas
   affectée.
-- **Aucun pilotage depuis Gladys.** Démarrer, arrêter ou limiter une charge
-  n'est pas possible dans cette version.
+- **Presque aucun pilotage depuis Gladys.** Démarrer, arrêter ou limiter une
+  charge n'est pas possible dans cette version ; le verrouillage du câble des
+  bornes Autel est la seule commande.
 
 ## Dépannage
 

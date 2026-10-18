@@ -99,6 +99,8 @@ export class SimulatedChargePoint extends EventEmitter {
         errorCode: 'NoError',
         transactionId: null,
         idTag: null,
+        // Autel permanent cable lock: only moved by the CSMS' DataTransfer.
+        permanentLock: false,
         meterWh: Number(this.config.initialMeterWh) || 0,
         powerW: 0,
         targetPowerW: Number(this.config.maxPowerW),
@@ -244,6 +246,10 @@ export class SimulatedChargePoint extends EventEmitter {
     this.timers = [];
   }
 
+  #isAutel() {
+    return String(this.config.vendor).trim().toLowerCase() === 'autel';
+  }
+
   /** The few CALLs a CSMS may send to a charge point. */
   #registerIncomingCalls(client) {
     const answer = (method, response) =>
@@ -254,9 +260,33 @@ export class SimulatedChargePoint extends EventEmitter {
       });
     answer('Reset', { status: 'Accepted' });
     answer('ChangeConfiguration', { status: 'NotSupported' });
-    answer('GetConfiguration', { configurationKey: [], unknownKey: [] });
+    answer('GetConfiguration', (params) => {
+      const key = 'SupportedFunctionLists';
+      const wanted = params?.key;
+      // Only an Autel announces its optional functions, like the real one.
+      if (this.#isAutel() && (!wanted || wanted.includes(key))) {
+        return {
+          configurationKey: [
+            { key, readonly: true, value: 'WIFI,Ethernet,MaxCurrent,PerManentLock,RS485,CT' },
+          ],
+        };
+      }
+      return { configurationKey: [], unknownKey: wanted ?? [] };
+    });
     answer('UnlockConnector', { status: 'NotSupported' });
     answer('ChangeAvailability', { status: 'Accepted' });
+    // Vendor extension: only answered when the simulated vendor is Autel (set
+    // it in the configuration), like the real charge point. The lock is a
+    // plain flag - it never shows in any message the charge point sends.
+    answer('DataTransfer', (params) => {
+      if (!this.#isAutel() || params?.vendorId !== 'Autel') return { status: 'UnknownVendorId' };
+      if (params.messageId !== 'PermanentLockConnector') return { status: 'UnknownMessageId' };
+      const connector = this.connectors.get(Number(params.data?.connectorId));
+      if (!connector || typeof params.data?.lock !== 'boolean') return { status: 'Rejected' };
+      connector.permanentLock = params.data.lock;
+      this.#changed();
+      return { status: 'Accepted', data: JSON.stringify({ status: 0 }) };
+    });
     answer('TriggerMessage', (params) => {
       if (params?.requestedMessage === 'StatusNotification') {
         for (const connector of this.connectors.values()) {

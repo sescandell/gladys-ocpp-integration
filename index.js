@@ -20,9 +20,10 @@
 // (see src/chargers.js), pushed LIVE to the gateway sub-container - no
 // restart needed to pick up a newly configured (or removed) charge point.
 //
-// V1: READ-ONLY - no onSetValue registered. A handler absent for a command
-// the SDK receives is automatically acked "not implemented" - no defensive
-// code needed to enforce this scope.
+// Read-only, but for what the vendor modules add (src/vendors/): onSetValue
+// below only does anything for their writable features. A handler absent for
+// a command the SDK receives is automatically acked "not implemented" - no
+// defensive code needed to enforce that scope.
 //
 // Environment variables provided by the Gladys supervisor to this container:
 //   - GLADYS_HOST_API_URL         (host API URL)
@@ -43,7 +44,7 @@ import {
 import {
   identityFromDeviceExternalId,
   chargerStates,
-  observedConnectorIds,
+  discoveryShape,
 } from './src/devices/charger.js';
 import { createStatePublisher } from './src/stateSync.js';
 import {
@@ -179,7 +180,7 @@ export function registerHandlers(
    */
   async function handleGatewayChange({ identity, charger }) {
     if (!identity || !charger) return;
-    const shape = observedConnectorIds(charger).join(',');
+    const shape = discoveryShape(charger);
     if (publishedShapes.get(identity) !== shape) {
       publishedShapes.set(identity, shape);
       await publishDevices({ onlyIfChanged: true });
@@ -300,6 +301,15 @@ export function registerHandlers(
 
   // --- Dashboard widget: one connector of one charge point ---------------------
   registerChargerWidget(gladys, fetchState);
+
+  // --- Command: the user sets a writable feature (only vendor modules have any) --
+  gladys.onSetValue(async (device, feature, value) => {
+    const blueprint = findBlueprintByDevice(gladys, device);
+    if (!blueprint || typeof blueprint.onSetValue !== 'function') {
+      throw new Error(`${feature.external_id} is read-only`);
+    }
+    await blueprint.onSetValue(gladys, device, feature, value, gatewayBaseUrl);
+  });
 
   // --- Polling: Gladys asks to refresh a device --------------------------------
   gladys.onPoll(async (device) => {

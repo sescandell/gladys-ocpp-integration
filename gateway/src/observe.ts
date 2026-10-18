@@ -1,5 +1,7 @@
 import type { ChargerState } from './state.ts';
 import { meterValuesToPatch } from './meterValues.ts';
+import { vendorModules } from './vendors/index.ts';
+import type { VendorModule } from './vendors/types.ts';
 import type {
   BootNotificationRequest,
   StatusNotificationRequest,
@@ -67,5 +69,24 @@ export function observe(
     }
     default:
       break;
+  }
+}
+
+/**
+ * Same as `observe` for a CALL going the other way: the origin cloud's (or
+ * this gateway's own) request to the charge point, with the charge point's
+ * response. The core reads nothing from it: it is handed to the vendor
+ * modules that apply to this charge point, since some of their state is only
+ * ever visible there (see vendors/types.ts).
+ */
+export function observeOutgoing(
+  state: ChargerState,
+  method: string,
+  params: unknown,
+  response: unknown,
+  modules: readonly VendorModule[] = vendorModules,
+): void {
+  for (const module of modules) {
+    if (module.matches(state)) module.observeOutgoing?.(state, method, params, response);
   }
 }

@@ -10,9 +10,7 @@
   "docker_image": "ghcr.io/sescandell/gladys-ocpp-integration:1.1.0",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/sescandell/gladys-ocpp-integration/main/cover.png",
-  "transports": [
-    "local"
-  ],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "how_to",
@@ -171,12 +169,7 @@
               }
             }
           ],
-          "default": [
-            "power",
-            "session_energy",
-            "duration",
-            "cost"
-          ]
+          "default": ["power", "session_energy", "duration", "cost"]
         },
         {
           "key": "chart",
@@ -283,6 +276,19 @@
           "label": {
             "en": "Show charge point details",
             "fr": "Afficher les détails de la borne"
+          },
+          "default": true
+        },
+        {
+          "key": "controls",
+          "type": "boolean",
+          "label": {
+            "en": "Show the charge point controls",
+            "fr": "Afficher les commandes de la borne"
+          },
+          "description": {
+            "en": "Buttons for what the charge point can be told to do, if anything.",
+            "fr": "Des boutons pour ce qu'on peut demander à la borne, s'il y en a."
           },
           "default": true
         }

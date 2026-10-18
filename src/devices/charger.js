@@ -1,8 +1,10 @@
 // -----------------------------------------------------------------------------
 // Device type: CHARGER STATION.
 //
-// V1 is READ-ONLY: no onSetValue implemented here -> index.js's generic
-// wiring automatically answers "not implemented" if Gladys ever asks.
+// Read-only, but for what a VENDOR MODULE adds (src/vendors/): this file knows
+// no manufacturer. A module contributes extra features, their states and the
+// command behind a writable one, on the charge points it applies to; every
+// other feature is a measurement.
 //
 // Data source: GET /api/state of the "gateway" sub-container (see
 // ../gatewayClient.js), started and supervised by this integration through
@@ -49,8 +51,10 @@ import {
   DEVICE_FEATURE_UNITS,
 } from '@gladysassistant/integration-sdk';
 import { fetchGatewayState } from '../gatewayClient.js';
+import { activeVendors, vendorForCommand, vendorsShape } from '../vendors/index.js';
+import { DEVICE_TYPE, chargerIds, featureExternalId, parseFeatureExternalId } from './ids.js';
 
-const DEVICE_TYPE = 'charger-station';
+export { chargerIds, featureExternalId, parseFeatureExternalId };
 
 const logger = createLogger({ name: DEVICE_TYPE });
 
@@ -130,35 +134,6 @@ const AGGREGATE_CONNECTOR_ID = 0;
 // any connector yet - the OCPP-conventional first (and, for most real
 // hardware, only) connector.
 const DEFAULT_CONNECTOR_ID = 1;
-
-// OCPP 1.6 has no EVSE concept - only OCPP 2.x's StatusNotification/
-// TransactionEvent carry an evseId alongside connectorId (one charge point
-// can expose several EVSEs, each with its own connector(s)). This relay is
-// 1.6-only today (see README's "Protocol scope"), but reserving this
-// segment in the feature external_id NOW, before any real device exists in
-// production, avoids a breaking external_id change (and the resulting loss
-// of feature history) if 2.x support is ever added later - `1` matches
-// OCPP 2.x's own convention for a charge point with a single EVSE (evseId 0
-// is reserved for the aggregate charge point, same pattern as
-// AGGREGATE_CONNECTOR_ID above).
-const DEFAULT_EVSE_ID = 1;
-
-/**
- * External id of one connector feature: `<device>:<featureKey>:<evse>:<connector>`.
- * Shared by the device definition, the published states and the dashboard
- * widget (src/widgets/charger.js), which binds tiles and charts to them.
- * @param {import('@gladysassistant/integration-sdk').DeviceExternalIds} ids
- * @param {string} featureKey one of FEATURE
- * @param {number} connectorId
- */
-export function featureExternalId(ids, featureKey, connectorId) {
-  return ids.feature(`${featureKey}:${DEFAULT_EVSE_ID}:${connectorId}`);
-}
-
-/** External ids (device + features) of the charge point `identity`. */
-export function chargerIds(gladys, identity) {
-  return gladys.externalIds(DEVICE_TYPE, identity);
-}
 
 // A discovered device's poll_frequency is NOT a free number: Gladys core
 // rejects (and fails the ENTIRE publishDiscoveredDevices call, for every
@@ -296,6 +271,14 @@ function buildConnectorFeatures(ids, connectorId) {
   ];
 }
 
+/**
+ * What Discovery currently shows of a charge point: its connectors and the
+ * vendor modules that apply. Republish when it changes.
+ */
+export function discoveryShape(chargeState) {
+  return [observedConnectorIds(chargeState).join(','), vendorsShape(chargeState)].join('|');
+}
+
 export function observedConnectorIds(chargeState) {
   return Object.keys(chargeState?.connectors ?? {})
     .map(Number)
@@ -334,7 +317,12 @@ function buildChargerDevice(gladys, identity, originCloudUrl, chargeState) {
     // supervised locally (see the gateway's "local mode") - just not yet
     // relayed anywhere.
     params: [{ name: 'Origin cloud URL', value: originCloudUrl ?? NOT_YET_CONFIGURED }],
-    features: connectorIds.flatMap((connectorId) => buildConnectorFeatures(ids, connectorId)),
+    features: connectorIds.flatMap((connectorId) => [
+      ...buildConnectorFeatures(ids, connectorId),
+      ...activeVendors(chargeState).flatMap(
+        (vendor) => vendor.connectorFeatures?.(ids, connectorId) ?? [],
+      ),
+    ]),
   };
 }
 
@@ -371,9 +359,12 @@ function knownIdentities(config, allChargers) {
  */
 export function chargerStates(gladys, identity, chargeState) {
   const ids = gladys.externalIds(DEVICE_TYPE, identity);
-  return observedConnectorIds(chargeState).flatMap((connectorId) =>
-    mapConnectorToStates(ids, connectorId, chargeState.connectors[connectorId]),
-  );
+  return observedConnectorIds(chargeState).flatMap((connectorId) => [
+    ...mapConnectorToStates(ids, connectorId, chargeState.connectors[connectorId]),
+    ...activeVendors(chargeState).flatMap(
+      (vendor) => vendor.connectorStates?.(ids, connectorId, chargeState) ?? [],
+    ),
+  ]);
 }
 
 export function identityFromDeviceExternalId(gladys, externalId) {
@@ -420,6 +411,33 @@ export const charger = {
         allChargers?.[identity],
       ),
     );
+  },
+
+  /**
+   * Gladys sets a writable feature: only the ones a vendor module declares
+   * (see src/vendors/index.js). The module acts; what Gladys then shows comes
+   * back through the gateway's change stream (see index.js).
+   * @param {object} gladys
+   * @param {object} device Gladys device
+   * @param {{external_id: string}} feature the feature being set
+   * @param {number|string} value
+   * @param {string} [gatewayBaseUrl] override for tests
+   */
+  async onSetValue(gladys, device, feature, value, gatewayBaseUrl) {
+    const identity = identityFromDeviceExternalId(gladys, device.external_id);
+    const parsed = identity
+      ? parseFeatureExternalId(chargerIds(gladys, identity), feature.external_id)
+      : null;
+    const vendor = parsed ? vendorForCommand(parsed.featureKey) : undefined;
+    if (!identity || !parsed || !vendor) {
+      throw new Error(`${feature.external_id} cannot be set`);
+    }
+    await vendor.commands[parsed.featureKey]({
+      identity,
+      connectorId: parsed.connectorId,
+      value,
+      gatewayBaseUrl,
+    });
   },
 
   async onPoll(gladys, config, device, fetchState = fetchGatewayState) {

@@ -10,8 +10,10 @@ import { createSimulator } from '../src/server.js';
 async function startCsms() {
   const server = new RPCServer({ protocols: ['ocpp1.6'] });
   const calls = [];
+  const clients = [];
   let nextTransactionId = 100;
   server.on('client', (client) => {
+    clients.push(client);
     client.handle(({ method, params }) => {
       calls.push({ identity: client.identity, method, params });
       switch (method) {
@@ -32,7 +34,12 @@ async function startCsms() {
   });
   const httpServer = await server.listen(0);
   const { port } = httpServer.address();
-  return { calls, url: `ws://127.0.0.1:${port}/`, close: () => server.close({ force: true }) };
+  return {
+    calls,
+    clients,
+    url: `ws://127.0.0.1:${port}/`,
+    close: () => server.close({ force: true }),
+  };
 }
 
 const methods = (calls) => calls.map((c) => c.method);
@@ -166,4 +173,51 @@ test('the web API reports the state, saves nothing without a config file, and re
 
   const html = await (await fetch(`${base}/`)).text();
   assert.match(html, /Simulateur de borne OCPP/);
+});
+
+test('an Autel charge point obeys the permanent lock DataTransfer, others do not know the vendor', async (t) => {
+  const csms = await startCsms();
+  const autel = new SimulatedChargePoint({ url: csms.url, identity: 'AUTEL-1', vendor: 'Autel' });
+  t.after(async () => {
+    await autel.disconnect();
+    await csms.close();
+  });
+  await autel.connect();
+  while (csms.clients.length < 1) await new Promise((resolve) => setTimeout(resolve, 5));
+
+  // The gateway's probe: an Autel lists the lock among its functions.
+  const configuration = await csms.clients[0].call('GetConfiguration', {
+    key: ['SupportedFunctionLists'],
+  });
+  assert.match(configuration.configurationKey[0].value, /PerManentLock/);
+
+  const lock = (lockValue) =>
+    csms.clients[0].call('DataTransfer', {
+      vendorId: 'Autel',
+      messageId: 'PermanentLockConnector',
+      data: { connectorId: 1, lock: lockValue },
+    });
+  assert.deepEqual(await lock(true), { status: 'Accepted', data: '{"status":0}' });
+  assert.equal(autel.snapshot().connectors[0].permanentLock, true);
+  await lock(false);
+  assert.equal(autel.snapshot().connectors[0].permanentLock, false);
+
+  await autel.disconnect();
+  const other = new SimulatedChargePoint({
+    url: csms.url,
+    identity: 'OTHER-1',
+    vendor: 'Simulator',
+  });
+  t.after(() => other.disconnect());
+  await other.connect();
+  while (csms.clients.length < 2) await new Promise((resolve) => setTimeout(resolve, 5));
+  const answer = await csms.clients[1].call('DataTransfer', {
+    vendorId: 'Autel',
+    messageId: 'PermanentLockConnector',
+    data: { connectorId: 1, lock: true },
+  });
+  assert.equal(answer.status, 'UnknownVendorId');
+  const none = await csms.clients[1].call('GetConfiguration', { key: ['SupportedFunctionLists'] });
+  assert.deepEqual(none.configurationKey, []);
+  assert.equal(other.snapshot().connectors[0].permanentLock, false);
 });

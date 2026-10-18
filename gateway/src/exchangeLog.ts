@@ -8,7 +8,10 @@
  */
 
 export type ExchangeDirection =
-  'EV Charger -> Primary' | 'Primary -> EV Charger' | 'EV Charger -> Local (unconfigured)';
+  | 'EV Charger -> Primary'
+  | 'Primary -> EV Charger'
+  | 'EV Charger -> Local (unconfigured)'
+  | 'Gateway -> EV Charger';
 
 export interface ExchangeOutcome {
   ok: boolean;

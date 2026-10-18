@@ -101,6 +101,34 @@ export async function syncChargerMap(chargers, baseUrl = GATEWAY_INTERNAL_URL) {
 }
 
 /**
+ * Runs a vendor command on one connector of a connected charge point
+ * (`POST /api/chargers/<identity>/connectors/<n>/commands/<name>`, see
+ * gateway/src/chargerCommands.ts and its vendor modules). Resolves once the
+ * charge point accepted it; rejects with the gateway's own explanation
+ * otherwise (not connected, not offered by this charge point, refused...).
+ * @param {{identity: string, connectorId: number, command: string, value: unknown}} command
+ * @param {string} [baseUrl] override for tests
+ * @returns {Promise<void>}
+ */
+export async function sendCommand(
+  { identity, connectorId, command, value },
+  baseUrl = GATEWAY_INTERNAL_URL,
+) {
+  const path = `/api/chargers/${encodeURIComponent(identity)}/connectors/${connectorId}/commands/${command}`;
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+    // The charge point has 10 s to answer on the gateway's side.
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `gateway ${path} -> HTTP ${res.status}`);
+  }
+}
+
+/**
  * Ensures the gateway sub-container is running, and reports its assigned
  * host port.
  *

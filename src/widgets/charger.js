@@ -15,7 +15,9 @@
 //   - one chart (`chart`, `chart_interval`): the live power curve and/or the
 //     energy of the recent sessions,
 //   - one status list (`details`): connector state, offered limit, error
-//     code, last session, last message, hardware.
+//     code, last session, last message, hardware,
+//   - the controls (`controls`) the vendor modules offer for this charge point
+//     (src/vendors/), buttons for instance - none on a charge point without any.
 //
 // Cost, in order of preference:
 //   1. `<energy feature>_cost`, a feature the CORE derives on its own for every
@@ -34,6 +36,7 @@
 
 import { createLogger, WIDGET_COLORS } from '@gladysassistant/integration-sdk';
 import { fetchGatewayState } from '../gatewayClient.js';
+import { activeVendors, MAX_WIDGET_COMPONENTS } from '../vendors/index.js';
 import {
   chargerIds,
   featureExternalId,
@@ -80,6 +83,7 @@ export const DEFAULT_SETTINGS = {
   chart: CHART_MODES.AUTO,
   chart_interval: 'last-twelve-hours',
   details: true,
+  controls: true,
 };
 
 /** Statuses during which a session is going on: the chart shows the live power curve. */
@@ -205,6 +209,8 @@ export function normalizeWidgetSettings(settings = {}) {
         ? settings.kwh_price
         : null,
     details: typeof settings.details === 'boolean' ? settings.details : DEFAULT_SETTINGS.details,
+    controls:
+      typeof settings.controls === 'boolean' ? settings.controls : DEFAULT_SETTINGS.controls,
   };
 }
 
@@ -408,8 +414,15 @@ export function buildChargerWidget({
         }),
       }
     : null;
-  const fixed = [chart, statusList].filter(Boolean);
-  const shownTiles = tiles.slice(0, MAX_COMPONENTS - 1 - fixed.length);
+  // What the vendor modules add (buttons...): device-bound commands, so they
+  // come back through the standard onSetValue path (index.js).
+  const controls = options.controls
+    ? activeVendors(chargeState)
+        .flatMap((vendor) => vendor.widgetComponents?.({ ids, connectorId, chargeState, t }) ?? [])
+        .slice(0, MAX_WIDGET_COMPONENTS)
+    : [];
+  const fixed = [chart, statusList, ...controls].filter(Boolean);
+  const shownTiles = tiles.slice(0, Math.max(0, MAX_COMPONENTS - 1 - fixed.length));
   const withCaption = 1 + shownTiles.length + fixed.length < MAX_COMPONENTS;
   const components = [
     { type: 'text', variant: 'heading', text: heading },
@@ -505,7 +518,12 @@ export function widgetSignature(chargeState) {
   // The newest closed session, not the history length: the gateway caps the
   // history, so once full the length no longer changes when a session ends.
   const last = chargeState?.history?.[0];
-  return JSON.stringify([connectors, last ? [last.transactionId, last.stoppedAt] : null]);
+  // The vendor modules' data as well: what a button offers follows it.
+  return JSON.stringify([
+    connectors,
+    last ? [last.transactionId, last.stoppedAt] : null,
+    chargeState?.extensions ?? null,
+  ]);
 }
 
 const DEVICES_CACHE_MS = 30_000;
